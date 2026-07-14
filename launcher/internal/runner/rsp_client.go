@@ -16,6 +16,11 @@ import (
 
 const rspServerID = "egovframe-tomcat"
 
+// publishTimeout covers server/publish, which copies every registered
+// deployable (potentially several exploded WARs, hundreds of MB) into the
+// shared Tomcat's webapps — far slower than ordinary RSP calls.
+const publishTimeout = 120 * time.Second
+
 type rspTypeRef struct {
 	ID          string `json:"id"`
 	VisibleName string `json:"visibleName,omitempty"`
@@ -221,7 +226,7 @@ func rspPublish(port int, serverID string, logs *logbuf.Buf) error {
 		}
 	}
 	logs.Append("[info] RSP publish kind=2 (재시도)")
-	_, err = c.call("server/publish", map[string]any{"server": handle, "kind": 2}, 15*time.Second)
+	_, err = c.call("server/publish", map[string]any{"server": handle, "kind": 2}, publishTimeout)
 	return err
 }
 
@@ -327,13 +332,14 @@ func rspDeployAndStart(port int, serverID, typeID, tomcatHome, label, explodedPa
 		logs.Append("[info] RSP 서버 STARTED 확인")
 	}
 
-	// 5. publish kind=2 (FULL)
+	// 5. publish kind=2 (FULL). 등록된 deployable 전체(공유 Tomcat의 여러
+	// 앱)를 webapps로 복사하므로 일반 호출(15초)보다 훨씬 오래 걸릴 수 있다.
 	logs.Append("[info] RSP publish kind=2")
 	publishParams := map[string]any{
 		"server": handle,
 		"kind":   2,
 	}
-	_, err = c.call("server/publish", publishParams, callTimeout)
+	_, err = c.call("server/publish", publishParams, publishTimeout)
 	if err != nil {
 		return fmt.Errorf("RSP publish 실패: %w", err)
 	}
