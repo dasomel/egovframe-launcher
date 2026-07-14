@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.3] - 2026-07-15
+
+### Fixed
+- **MSA Common Components 503 on Menu Links**: The launcher only started 6 of the stack's services, so gateway routes to EgovAuthor, EgovCmmnCode, EgovLoginPolicy, EgovQuestionnaire and EgovSearch returned `503 Service Unavailable`. All five are now part of the auto-start chain (the first four on random ports via Eureka `lb://` routing).
+- **EgovSearch Port Bind Failure on Windows**: EgovSearch's default port 9992 can fall inside a Windows (Hyper-V) excluded port range and fail to bind even though nothing is listening; the launcher now pins it to 19006. Note: the search *feature* still requires a separate OpenSearch (9200) + search-model (`EgovSearch-Config/model`) installation — without them the service starts and routes, but search queries fail.
+
 ## [1.0.2] - 2026-07-15
 
 ### Fixed

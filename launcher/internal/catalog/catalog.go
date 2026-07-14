@@ -10,7 +10,8 @@
 //     portal 8093, enterprise-business 8094, homepage 8095,
 //     common-components 8096, simple-react 5173
 //   - msa 내부: ConfigServer 8888, Eureka 8761, EgovMain 19003,
-//     EgovLogin 19004, EgovBoard 19005, Gateway 19000
+//     EgovLogin 19004, EgovBoard 19005, EgovSearch 19006, Gateway 19000
+//     (Author/CmmnCode/LoginPolicy/Questionnaire는 랜덤 포트 + Eureka lb://)
 //   - msa-edu 내부: config 8889, discovery 8762, apigateway 8001,
 //     포털 프론트 3000 — msa와 내부 포트가 겹치지 않아 두 MSA 스택을
 //     동시에 실행할 수 있다
@@ -182,9 +183,20 @@ func Targets() []Target {
 				{Name: "java", Args: []string{"-jar", "EgovMain/target/EgovMain.jar"}, Port: 19003},
 				{Name: "java", Args: []string{"-jar", "EgovLogin/target/EgovLogin.jar"}, Port: 19004},
 				{Name: "java", Args: []string{"-jar", "EgovBoard/target/EgovBoard.jar"}, Port: 19005},
+				// 아래 4개는 랜덤 포트(server.port: 0)로 기동해 Eureka에 등록되고
+				// Gateway가 lb://로 라우팅한다 — 미기동 시 해당 메뉴가 503이 된다.
+				{Name: "java", Args: []string{"-jar", "EgovAuthor/target/EgovAuthor.jar"}},
+				{Name: "java", Args: []string{"-jar", "EgovCmmnCode/target/EgovCmmnCode.jar"}},
+				{Name: "java", Args: []string{"-jar", "EgovLoginPolicy/target/EgovLoginPolicy.jar"}},
+				{Name: "java", Args: []string{"-jar", "EgovQuestionnaire/target/EgovQuestionnaire.jar"}},
+				// EgovSearch의 기본 포트 9992는 Windows Hyper-V 예약 범위
+				// (예: 9949–10048)에 걸려 bind가 실패하므로 19006으로 고정한다.
+				// OpenSearch(9200)와 검색 모델(EgovSearch-Config/model) 없이도
+				// 기동·라우팅은 되고, 실제 검색 기능만 별도 설치가 필요하다.
+				{Name: "java", Args: []string{"-jar", "EgovSearch/target/EgovSearch.jar"}, Port: 19006},
 				{Name: "java", Args: []string{"-jar", "GatewayServer/target/GatewayServer.jar"}},
 			},
-			Note:       "Run 실행 시 Config/Eureka/Main/Login/Board/Gateway 모듈을 순차적으로 자동 기동합니다.",
+			Note:       "Run 실행 시 Config/Eureka/Main/Login/Board/Author/CmmnCode/LoginPolicy/Questionnaire/Search/Gateway 모듈을 순차 자동 기동합니다. (EgovMobileId는 외부 의존성 문제로 빌드 제외 · 검색 '기능'은 OpenSearch+검색모델 별도 설치 필요)",
 			DeployType: "boot",
 			// 로컬 데모에 Zipkin(9411)이 없어 트레이싱 export를 끔.
 			RunEnv: []string{"MANAGEMENT_ZIPKIN_TRACING_EXPORT_ENABLED=false"},
