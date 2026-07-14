@@ -27,12 +27,13 @@ type TargetView struct {
 }
 
 type server struct {
-	r      *runner.Runner
-	assets fs.FS
+	r       *runner.Runner
+	assets  fs.FS
+	version string
 }
 
-func New(r *runner.Runner, assets fs.FS) http.Handler {
-	s := &server{r: r, assets: assets}
+func New(r *runner.Runner, assets fs.FS, version string) http.Handler {
+	s := &server{r: r, assets: assets, version: version}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/targets", s.handleTargets)
 	mux.HandleFunc("POST /api/targets/{id}/{action}", s.handleAction)
@@ -54,6 +55,7 @@ var startedAt = time.Now()
 
 func (s *server) handleVersion(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, map[string]any{
+		"version":   s.version,
 		"startedAt": startedAt.Format("2006-01-02 15:04:05"),
 		"pid":       os.Getpid(),
 	})

@@ -186,3 +186,20 @@ button:disabled { opacity: .4; cursor: not-allowed; }
 .mon-port { font-family: ui-monospace, Menlo, monospace; color: var(--muted); }
 .mon-open { color: var(--primary); font-weight: 700; }
 .build-stamp { font-size: .72rem; color: var(--muted); margin-right: var(--s-sm); white-space: nowrap; }
+
+/* --- 버전 배지 & 릴리스 노트 모달 --- */
+.version-badge {
+  font-size: .78rem; font-weight: 700; padding: 3px 10px; border-radius: 999px;
+  background: transparent; color: var(--primary); border: 1px solid var(--primary);
+  cursor: pointer; white-space: nowrap;
+}
+.version-badge:hover { background: var(--primary); color: #fff; }
+.version-badge.update-available { background: #B45309; border-color: #B45309; color: #fff; }
+.release-notes { max-height: 55vh; overflow-y: auto; }
+.release-tag { margin: var(--s-md) 0 var(--s-sm) 0; font-size: .95rem; }
+.release-tag:first-child { margin-top: 0; }
+.release-body {
+  white-space: pre-wrap; word-break: break-word; font-size: .8rem; line-height: 1.5;
+  background: var(--canvas, #f6f7f8); padding: var(--s-sm); border-radius: 6px; margin: 0;
+}
+.modal-footer .release-modal-link { margin: 0 auto 0 0; color: var(--primary); text-decoration: none; }

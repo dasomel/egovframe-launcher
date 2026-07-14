@@ -10,6 +10,7 @@
   <header class="topbar">
     <h1>eGovFrame VSCode Launcher</h1>
     <div class="header-right">
+      <button id="versionBadge" type="button" class="version-badge" title="릴리스 노트 보기">v—</button>
       <div id="globalPrereqs" class="prereqs"></div>
       <button id="toggleConfig" type="button" class="btn-sm">설정</button>
       <button id="toggleMonitor" type="button" class="btn-sm">모니터링</button>
@@ -196,6 +197,20 @@
     <div class="modal-footer">
       <span class="note accounts-modal-note">시드 데이터 기준 기본 계정입니다.</span>
       <button id="accountsModalClose" type="button">닫기</button>
+    </div>
+  </div>
+  <!-- 릴리스 노트 모달 -->
+  <div id="releaseModalBackdrop" class="modal-backdrop hidden"></div>
+  <div id="releaseModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="releaseModalTitle">
+    <div class="modal-header">
+      <h3 id="releaseModalTitle">릴리스 노트</h3>
+    </div>
+    <div class="modal-body">
+      <div id="releaseModalBody" class="release-notes">불러오는 중…</div>
+    </div>
+    <div class="modal-footer">
+      <a class="note release-modal-link" href="https://github.com/dasomel/egovframe-launcher/releases" target="_blank" rel="noopener">GitHub에서 전체 보기 ↗</a>
+      <button id="releaseModalClose" type="button">닫기</button>
     </div>
   </div>
   <script src="app.js"></script>

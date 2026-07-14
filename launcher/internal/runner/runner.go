@@ -1502,6 +1502,29 @@ func waitForPort(port int, maxWait time.Duration) bool {
 	return false
 }
 
+// waitForHTTPReady polls http://127.0.0.1:port/path until a response other
+// than 404/5xx arrives (a login redirect counts as ready). False on timeout.
+func waitForHTTPReady(port int, path string, maxWait time.Duration) bool {
+	client := &http.Client{
+		Timeout: 3 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	deadline := time.Now().Add(maxWait)
+	for time.Now().Before(deadline) {
+		resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d%s", port, path))
+		if err == nil {
+			resp.Body.Close()
+			if resp.StatusCode != http.StatusNotFound && resp.StatusCode < 500 {
+				return true
+			}
+		}
+		time.Sleep(2 * time.Second)
+	}
+	return false
+}
+
 func portListening(port int, timeout time.Duration) bool {
 	conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), timeout)
 	if err != nil {
@@ -2183,6 +2206,19 @@ func (r *Runner) setupRSP(j *job) {
 				r.syncRSPJobsPort(j.target.ID, appPort)
 				url := fmt.Sprintf("http://localhost:%d/%s/", appPort, label)
 				j.logs.Append("[success] RSP 자동 기동·배포 완료 → " + url)
+				// 배포 레이스 보정: autoDeploy가 복사 도중 컨텍스트를 시작하면
+				// 클래스 누락(NoClassDefFoundError)으로 컨텍스트가 죽은 채 404가
+				// 남는다. 응답이 없으면 publish를 한 번 더 실행해 재배포시킨다.
+				if !waitForHTTPReady(appPort, "/"+label+"/", 20*time.Second) {
+					j.logs.Append("[warn] 앱이 아직 응답하지 않습니다 — 배포 레이스 보정을 위해 publish를 재시도합니다")
+					if perr := rspPublish(port, serverID, j.logs); perr != nil {
+						j.logs.Append("[warn] publish 재시도 실패: " + perr.Error())
+					} else if waitForHTTPReady(appPort, "/"+label+"/", 40*time.Second) {
+						j.logs.Append("[success] 재배포 후 앱 응답 확인")
+					} else {
+						j.logs.Append("[warn] 앱이 여전히 응답하지 않습니다 — 로그에서 애플리케이션 기동 오류를 확인하세요")
+					}
+				}
 				codeBin := cfg.VSCodePath
 				if codeBin == "" || codeBin == "Not Found (Add to PATH or specify)" {
 					codeBin = "code"

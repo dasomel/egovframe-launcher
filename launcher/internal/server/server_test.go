@@ -13,7 +13,7 @@ import (
 
 func newTestServer() http.Handler {
 	assets := fstest.MapFS{"index.html": {Data: []byte("<h1>ok</h1>")}}
-	return New(runner.New(""), assets)
+	return New(runner.New(""), assets, "test")
 }
 
 func TestTargetsEndpointReturnsJSON(t *testing.T) {

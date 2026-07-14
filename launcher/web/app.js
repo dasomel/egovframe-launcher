@@ -96,6 +96,7 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && consoleEl.classList.contains("fullscreen")) fsBtn.onclick();
   if (e.key === "Escape" && !document.getElementById("accountsModal").classList.contains("hidden")) closeAccountsModal();
   if (e.key === "Escape" && !document.getElementById("tomcatModal").classList.contains("hidden")) closeTomcatModal();
+  if (e.key === "Escape" && !document.getElementById("releaseModal").classList.contains("hidden")) hideModal("releaseModal");
 });
 
 document.getElementById("clearLog").onclick = () => { logLines = []; logEl.textContent = ""; };
@@ -692,9 +693,67 @@ function renderMonitor(views) {
   }
 }
 
+// --- 버전 배지 & 릴리스 노트 팝업 ---
+const versionBadge = document.getElementById("versionBadge");
+const RELEASES_API = "https://api.github.com/repos/dasomel/egovframe-launcher/releases";
+let appVersion = "";
+
+async function loadVersion() {
+  try {
+    const res = await api("/api/version");
+    const v = await res.json();
+    appVersion = v.version || "dev";
+    versionBadge.textContent = appVersion;
+    versionBadge.title = `릴리스 노트 보기 (시작: ${v.startedAt} · PID ${v.pid})`;
+    checkLatestRelease();
+  } catch {
+    versionBadge.textContent = "v?";
+  }
+}
+
+async function checkLatestRelease() {
+  if (!appVersion || appVersion === "dev") return;
+  try {
+    const res = await fetch(`${RELEASES_API}/latest`);
+    if (!res.ok) return;
+    const rel = await res.json();
+    if (rel.tag_name && rel.tag_name !== appVersion) {
+      versionBadge.classList.add("update-available");
+      versionBadge.textContent = `${appVersion} → ${rel.tag_name} 업데이트`;
+    }
+  } catch { /* 오프라인 등 — 배지 업데이트만 생략 */ }
+}
+
+versionBadge.onclick = async () => {
+  const bodyEl = document.getElementById("releaseModalBody");
+  bodyEl.textContent = "불러오는 중…";
+  showModal("releaseModal");
+  try {
+    const res = await fetch(`${RELEASES_API}?per_page=10`);
+    if (!res.ok) throw new Error(`GitHub API ${res.status}`);
+    const rels = await res.json();
+    bodyEl.innerHTML = "";
+    for (const r of rels) {
+      const h = document.createElement("h4");
+      h.className = "release-tag";
+      h.textContent = `${r.tag_name}${r.tag_name === appVersion ? " — 현재 버전" : ""} (${(r.published_at || "").slice(0, 10)})`;
+      const pre = document.createElement("pre");
+      pre.className = "release-body";
+      pre.textContent = r.body || "(내용 없음)";
+      bodyEl.append(h, pre);
+    }
+    if (!rels.length) bodyEl.textContent = "게시된 릴리스가 없습니다.";
+  } catch (e) {
+    bodyEl.textContent = "릴리스 노트를 불러오지 못했습니다 (네트워크 확인). " + e.message;
+  }
+};
+document.getElementById("releaseModalClose").onclick = () => hideModal("releaseModal");
+document.getElementById("releaseModalBackdrop").onclick = () => hideModal("releaseModal");
+
 loadConfig();
 refresh();
 refreshExtStatus();
+loadVersion();
 setInterval(refresh, 1500);
 
 // Config panel collapse/expand toggling

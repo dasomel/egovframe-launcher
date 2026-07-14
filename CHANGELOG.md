@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.6] - 2026-07-15
+
+### Added
+- **Version Badge & Release Notes Popup**: The header now shows the running launcher version (stamped at build time from the latest CHANGELOG entry). Clicking it opens a popup with per-release notes fetched from GitHub Releases, and the badge highlights when a newer release is available.
+
+### Fixed
+- **RSP Deploy Race (Context Dead with 404)**: Tomcat's `autoDeploy` can start a context while RSP is still copying the exploded WAR into `webapps/`, leaving it failed with `NoClassDefFoundError` (e.g. `jakarta/json/JsonException`) even though the jar is present. After publish, the launcher now polls the app URL and re-publishes once if it stays 404, triggering a clean redeploy.
+
 ## [1.0.5] - 2026-07-15
 
 ### Fixed

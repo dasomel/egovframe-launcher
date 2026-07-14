@@ -199,6 +199,32 @@ func rspStopServer(port int, serverID string, logs *logbuf.Buf) error {
 	return nil
 }
 
+// rspPublish re-runs a FULL publish (kind=2) for serverID. Used to recover
+// from the webapps copy race: Tomcat's autoDeploy can start a context while
+// RSP is still copying the exploded WAR, leaving it failed with missing
+// classes — a second publish updates timestamps and triggers a clean redeploy.
+func rspPublish(port int, serverID string, logs *logbuf.Buf) error {
+	c, err := dialRSP(port)
+	if err != nil {
+		return fmt.Errorf("RSP 연결 실패: %w", err)
+	}
+	defer c.conn.Close()
+	handle := rspHandle{ID: serverID}
+	if res, err := c.call("server/getServerHandles", nil, 15*time.Second); err == nil {
+		var handles []rspHandle
+		_ = json.Unmarshal(res, &handles)
+		for _, h := range handles {
+			if h.ID == serverID {
+				handle = h
+				break
+			}
+		}
+	}
+	logs.Append("[info] RSP publish kind=2 (재시도)")
+	_, err = c.call("server/publish", map[string]any{"server": handle, "kind": 2}, 15*time.Second)
+	return err
+}
+
 // rspDeployAndStart runs the proven RSP sequence:
 // createServer → getServerHandles → addDeployable → startServerAsync → waitState(STARTED) → publish
 func rspDeployAndStart(port int, serverID, typeID, tomcatHome, label, explodedPath string, logs *logbuf.Buf) error {

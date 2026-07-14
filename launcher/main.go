@@ -17,6 +17,10 @@ import (
 	"egovframe-launcher/web"
 )
 
+// version is stamped at build time via -ldflags "-X main.version=v1.0.x"
+// (see Makefile); "dev" means a plain `go build` without version injection.
+var version = "dev"
+
 func main() {
 	addr := flag.String("addr", "127.0.0.1:7070", "listen address")
 	workspace := flag.String("workspace", ".work", "clone workspace directory")
@@ -34,7 +38,7 @@ func main() {
 	}
 
 	r := runner.New(ws)
-	handler := server.New(r, assets)
+	handler := server.New(r, assets, version)
 
 	ln, err := net.Listen("tcp", *addr)
 	if err != nil {
