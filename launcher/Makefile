@@ -23,9 +23,15 @@ run: build
 	./$(BINARY)
 
 cross:
-	GOOS=darwin  GOARCH=arm64 go build -o $(DIST)/$(BINARY)-darwin-arm64 .
-	GOOS=darwin  GOARCH=amd64 go build -o $(DIST)/$(BINARY)-darwin-amd64 .
-	GOOS=windows GOARCH=amd64 go build -o $(DIST)/$(BINARY)-windows-amd64.exe .
+	mkdir -p $(DIST)
+	# macOS
+	GOOS=darwin  GOARCH=arm64 go build -ldflags="-s -w" -o $(DIST)/$(BINARY)-darwin-arm64 .
+	GOOS=darwin  GOARCH=amd64 go build -ldflags="-s -w" -o $(DIST)/$(BINARY)-darwin-amd64 .
+	# Windows
+	GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o $(DIST)/$(BINARY)-windows-amd64.exe .
+	GOOS=windows GOARCH=arm64 go build -ldflags="-s -w" -o $(DIST)/$(BINARY)-windows-arm64.exe .
+
+
 
 clean:
 	rm -rf $(BINARY) $(DIST) .work
