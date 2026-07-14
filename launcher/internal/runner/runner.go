@@ -2676,7 +2676,13 @@ func ensureMySQLContainer(logs *logbuf.Buf) error {
 		"run", "-d", "--name", launcherMySQLContainer,
 		"-e", "MYSQL_ROOT_PASSWORD=" + launcherMySQLRootPass,
 		"-p", fmt.Sprintf("%d:3306", launcherMySQLPort),
+		// eGovFrame 앱들은 테이블명을 대문자(DDL/매퍼)와 소문자(런타임
+		// 접근제어 SQL 등)로 섞어 쓴다. 개발 표준 환경(Windows MySQL,
+		// lower_case_table_names=1)과 달리 Linux 컨테이너 기본값(0)은
+		// 대소문자를 구분해 "Table doesn't exist"가 나므로 1로 맞춘다.
+		// (MySQL 8은 데이터 초기화 시에만 설정 가능 — 컨테이너 생성 시 지정)
 		"mysql:8.0",
+		"--lower-case-table-names=1",
 	}
 	// Wait for MySQL to accept AUTHENTICATED connections. mysqladmin ping
 	// answers "alive" even during the image's init phase (temporary server,
@@ -2686,7 +2692,7 @@ func ensureMySQLContainer(logs *logbuf.Buf) error {
 		pingCmd := exec.Command("docker", "exec", "-e", "MYSQL_PWD="+launcherMySQLRootPass, launcherMySQLContainer, "mysql", "-uroot", "-e", "SELECT 1")
 		return pingCmd.Run() == nil
 	}
-	return ensureDockerContainer(containerSpec{
+	if err := ensureDockerContainer(containerSpec{
 		name:         launcherMySQLContainer,
 		displayName:  "MySQL",
 		image:        "mysql:8.0",
@@ -2698,7 +2704,18 @@ func ensureMySQLContainer(logs *logbuf.Buf) error {
 		hostPort:     launcherMySQLPort,
 		// recreateOnCrash left false: MySQL's imported schemas live in the
 		// container and must never be wiped automatically.
-	}, logs)
+	}, logs); err != nil {
+		return err
+	}
+	// Containers created before v1.0.5 predate --lower-case-table-names=1;
+	// they keep working for uppercase-only apps but break the mixed-case ones.
+	// Never recreate automatically (data loss) — surface how to migrate.
+	out, _ := exec.Command("docker", "exec", "-e", "MYSQL_PWD="+launcherMySQLRootPass, launcherMySQLContainer,
+		"mysql", "-uroot", "-N", "-e", "SELECT @@lower_case_table_names").Output()
+	if strings.TrimSpace(string(out)) == "0" {
+		logs.Append("[warn] 기존 MySQL 컨테이너가 테이블명 대소문자를 구분합니다(lower_case_table_names=0) — 공통컴포넌트 등 일부 앱의 소문자 SQL이 실패할 수 있습니다. `docker rm -f " + launcherMySQLContainer + "` 후 각 타깃의 DB 설정을 다시 실행하면 새 설정으로 재생성됩니다")
+	}
+	return nil
 }
 
 // ensureRedisContainer starts (or reuses) a single shared Redis container
@@ -2906,7 +2923,9 @@ func setupScriptDatabase(dir, scriptDir string, logs *logbuf.Buf) error {
 	if err := ensureMySQLAppUser(defaultComposeDBUser, defaultComposeDBPass); err != nil {
 		return err
 	}
-	for _, sub := range []string{"ddl", "dml"} {
+	// ddl → dml → comment 순서: comment는 테이블 설명(ALTER TABLE ... COMMENT)
+	// 스크립트라 테이블 생성 이후에 실행해야 한다.
+	for _, sub := range []string{"ddl", "dml", "comment"} {
 		sqlDir := filepath.Join(scriptDir, sub, "mysql")
 		entries, err := os.ReadDir(sqlDir)
 		if err != nil {

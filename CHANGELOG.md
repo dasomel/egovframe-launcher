@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.5] - 2026-07-15
+
+### Fixed
+- **UI Freeze While Streaming Logs**: The log console appended every SSE line via `textContent +=` (rebuilding the whole string per line, O(n²)) and forced a reflow per line, freezing the tab under heavy output (e.g. the 11-service MSA stack). Incoming lines are now batched every 250ms into a single text-node append, total lines are capped at 4,000, and the card grid is only re-rendered when target state actually changes (plus no rendering in hidden tabs).
+- **Case-Sensitive Table Names (Linux MySQL)**: eGovFrame apps mix uppercase DDL/mappers with lowercase runtime SQL (e.g. `EgovAccessConfiguration`'s `comtnemplyrscrtyestbs` query in common-components), which fails on the Linux container default `lower_case_table_names=0`. New MySQL containers are created with `--lower-case-table-names=1` (matching the Windows-MySQL dev standard). Existing containers keep working but log a migration hint (`docker rm -f egov-launcher-mysql` + re-run DB setup), since MySQL 8 only accepts this setting at data-directory initialization.
+- **Common Components table comments**: DB setup now also imports `script/comment/mysql` (table `COMMENT` metadata) after DDL/DML.
+
 ## [1.0.4] - 2026-07-15
 
 ### Added

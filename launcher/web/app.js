@@ -11,6 +11,33 @@ let logFilter = "";
 const svcSelect = document.getElementById("logServiceFilter");
 const svcSeen = new Set();
 
+// 로그 렌더링 성능: 줄 단위 textContent += 는 매번 전체 문자열을 재구성해
+// (O(n²)) 대량 로그(MSA 11개 서비스 등)에서 탭이 얼어붙는다. 수신 줄을
+// 모아 250ms마다 텍스트 노드 하나로 append하고, 총 줄 수도 상한을 둔다.
+const MAX_LOG_LINES = 4000;
+let pendingLog = [];
+
+function flushLog() {
+  if (pendingLog.length === 0) return;
+  const incoming = pendingLog;
+  pendingLog = [];
+  for (const l of incoming) noteService(l);
+  logLines.push(...incoming);
+  const overflow = logLines.length - MAX_LOG_LINES;
+  if (overflow > 0) {
+    logLines = logLines.slice(overflow);
+    rebuildLog(); // 상한 도달 시에만 전체 재구성 — DOM도 함께 잘려나간다
+    return;
+  }
+  const nearBottom = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 60;
+  const chunk = incoming.filter(lineMatches).map((l) => l + "\n").join("");
+  if (chunk) {
+    logEl.appendChild(document.createTextNode(chunk));
+    if (nearBottom) logEl.scrollTop = logEl.scrollHeight;
+  }
+}
+setInterval(flushLog, 250);
+
 function noteService(line) {
   const m = line.match(/--- \[([\w.-]+)\] \[/);
   if (m && !svcSeen.has(m[1])) {
@@ -33,6 +60,7 @@ function rebuildLog() {
 
 function resetLogConsole() {
   logLines = [];
+  pendingLog = [];
   logFilter = "";
   svcSeen.clear();
   svcSelect.innerHTML = '<option value="">전체 서비스</option>';
@@ -273,13 +301,9 @@ function streamLogs(id, title) {
   resetLogConsole();
   logTitle.textContent = `로그 — ${title}`;
   evtSource = new EventSource(`/api/events/${id}`);
+  // 렌더링은 flushLog가 배치로 처리 — 여기서는 큐에만 쌓는다.
   evtSource.onmessage = (e) => {
-    logLines.push(e.data);
-    noteService(e.data);
-    if (lineMatches(e.data)) {
-      logEl.textContent += e.data + "\n";
-      logEl.scrollTop = logEl.scrollHeight;
-    }
+    pendingLog.push(e.data);
   };
 }
 
@@ -607,9 +631,16 @@ document.getElementById("tomcatModalInstall").onclick = async () => {
   }
 };
 
+let lastViewsJSON = "";
 async function refresh() {
+  if (document.hidden) return; // 백그라운드 탭에서는 폴링만 하고 렌더링하지 않음
   const res = await api("/api/targets");
-  const views = await res.json();
+  const text = await res.text();
+  // 1.5초마다 전체 카드 DOM을 재구축하면 로그 스트리밍과 겹쳐 UI가 버벅인다
+  // — 상태가 실제로 바뀐 경우에만 다시 그린다.
+  if (text === lastViewsJSON) return;
+  lastViewsJSON = text;
+  const views = JSON.parse(text);
   render(views);
   renderMonitor(views);
 }
