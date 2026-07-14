@@ -288,11 +288,7 @@ func (s *server) handleJDKs(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *server) handleExtensionStatus(w http.ResponseWriter, _ *http.Request) {
-	cfg := persist.Load()
-	codeBin := cfg.VSCodePath
-	if codeBin == "" {
-		codeBin = "code"
-	}
+	codeBin := runner.VSCodeCLI(persist.Load().VSCodePath)
 
 	out, err := exec.Command(codeBin, "--list-extensions").CombinedOutput()
 	installed := false
@@ -303,11 +299,7 @@ func (s *server) handleExtensionStatus(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *server) handleInstallExtension(w http.ResponseWriter, _ *http.Request) {
-	cfg := persist.Load()
-	codeBin := cfg.VSCodePath
-	if codeBin == "" {
-		codeBin = "code"
-	}
+	codeBin := runner.VSCodeCLI(persist.Load().VSCodePath)
 
 	out, err := exec.Command(codeBin, "--install-extension", "redhat.vscode-community-server-connector").CombinedOutput()
 	if err != nil {

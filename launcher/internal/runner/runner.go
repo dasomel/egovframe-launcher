@@ -447,6 +447,11 @@ func (r *Runner) runWAR(j *job, tomcatHome string, customPort int) {
 		return
 	}
 
+	// The shared Tomcat's console encoding may have been aligned to the RSP
+	// backend charset (e.g. MS949); the launcher itself streams logs to a UTF-8
+	// web UI, so force UTF-8 in this isolated copy.
+	_ = setTomcatConsoleEncoding(filepath.Join(base, "conf"), "UTF-8")
+
 	// Patch server.xml: replace shutdown port and first HTTP connector port.
 	serverXML := filepath.Join(base, "conf", "server.xml")
 	xmlData, err := os.ReadFile(serverXML)
@@ -631,6 +636,68 @@ set "JAVA_OPTS=%JAVA_OPTS% -Dfile.encoding=UTF-8 -Dfile.client.encoding=UTF-8 -D
 set "CATALINA_OPTS=%CATALINA_OPTS% -Dfile.encoding=UTF-8 -Dfile.client.encoding=UTF-8 -Dclient.encoding.override=UTF-8"
 `
 	_ = os.WriteFile(batPath, []byte(batContent), 0o644)
+}
+
+// consoleEncodingRe matches the ConsoleHandler encoding line in Tomcat's
+// conf/logging.properties.
+var consoleEncodingRe = regexp.MustCompile(`(?m)^\s*java\.util\.logging\.ConsoleHandler\.encoding\s*=.*$`)
+
+// setTomcatConsoleEncoding rewrites java.util.logging.ConsoleHandler.encoding in
+// confDir/logging.properties to enc. File-handler encodings stay untouched so
+// catalina.log etc. remain UTF-8.
+func setTomcatConsoleEncoding(confDir, enc string) error {
+	p := filepath.Join(confDir, "logging.properties")
+	data, err := os.ReadFile(p)
+	if err != nil {
+		return err
+	}
+	line := "java.util.logging.ConsoleHandler.encoding = " + enc
+	var out string
+	if consoleEncodingRe.Match(data) {
+		out = consoleEncodingRe.ReplaceAllString(string(data), line)
+	} else {
+		out = strings.TrimRight(string(data), "\n") + "\n" + line + "\n"
+	}
+	return os.WriteFile(p, []byte(out), 0o644)
+}
+
+// javaDefaultFileEncoding reports the default file.encoding of the JVM at
+// javaHome ("" → java on PATH). On Korean Windows this is MS949 for JDK ≤ 17
+// and UTF-8 for JDK 18+ (JEP 400); returns "" if it cannot be determined.
+func javaDefaultFileEncoding(javaHome string) string {
+	javaBin := "java"
+	if javaHome != "" {
+		javaBin = filepath.Join(javaHome, "bin", "java")
+	}
+	out, err := exec.Command(javaBin, "-XshowSettings:properties", "-version").CombinedOutput()
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if v, ok := strings.CutPrefix(strings.TrimSpace(line), "file.encoding ="); ok {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
+}
+
+// alignTomcatConsoleEncodingWithRSP sets the shared Tomcat's console log
+// encoding to the RSP backend JVM's default charset. The RSP backend decodes
+// the Tomcat process stdout with its own default charset (MS949 on Korean
+// Windows for JDK ≤ 17), so UTF-8 console output turns into mojibake in
+// VSCode's server log view unless the two sides agree.
+func alignTomcatConsoleEncodingWithRSP(tomcatHome, javaHome string, logs *logbuf.Buf) {
+	enc := javaDefaultFileEncoding(javaHome)
+	if enc == "" {
+		return
+	}
+	if err := setTomcatConsoleEncoding(filepath.Join(tomcatHome, "conf"), enc); err != nil {
+		logs.Append("[warn] Tomcat 콘솔 로그 인코딩 설정 실패: " + err.Error())
+		return
+	}
+	if !strings.EqualFold(enc, "UTF-8") {
+		logs.Append("[info] Tomcat 콘솔 로그 인코딩을 RSP 백엔드 문자셋(" + enc + ")에 맞췄습니다 (VSCode 한글 로그 깨짐 방지)")
+	}
 }
 
 // ensureTomcatHTTPPort rewrites the shared Tomcat's server.xml HTTP Connector
@@ -1019,6 +1086,24 @@ func findExecutableJar(dir string) string {
 	return ""
 }
 
+// VSCodeCLI resolves the CLI entry point for a configured VS Code binary. On
+// Windows the GUI binary (Code.exe) ignores CLI flags such as
+// --list-extensions / --install-extension (it just opens a window), so the
+// real CLI is the bin\code.cmd shim next to it. Returns codeBin unchanged
+// when no shim is found.
+func VSCodeCLI(codeBin string) string {
+	if codeBin == "" {
+		return "code"
+	}
+	if runtime.GOOS == "windows" && strings.EqualFold(filepath.Base(codeBin), "Code.exe") {
+		shim := filepath.Join(filepath.Dir(codeBin), "bin", "code.cmd")
+		if _, err := os.Stat(shim); err == nil {
+			return shim
+		}
+	}
+	return codeBin
+}
+
 // appendEnv appends kv to cmd.Env, defaulting cmd.Env to the current process
 // environment first if it is unset (a nil Env would otherwise make the child
 // process start with only kv and lose PATH/HOME/etc).
@@ -1297,6 +1382,20 @@ func (r *Runner) command(j *job, c catalog.Command) *exec.Cmd {
 			fmt.Sprintf("PORT=%d", port),
 			fmt.Sprintf("SERVER_PORT=%d", port),
 		)
+	}
+	if runtime.GOOS == "windows" {
+		// Windows JVMs default to the ANSI codepage (e.g. MS949 on Korean
+		// Windows), but the launcher streams child output to a UTF-8 web UI —
+		// force UTF-8 on every JVM this command may spawn (mvn itself and any
+		// forked app). stdout/stderr.encoding cover JDK 18+, where
+		// file.encoding is already UTF-8 but redirected System.out still uses
+		// the native encoding.
+		const jvmUTF8 = "-Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8"
+		jto := jvmUTF8
+		if prev := os.Getenv("JAVA_TOOL_OPTIONS"); prev != "" {
+			jto = prev + " " + jvmUTF8
+		}
+		extra = append(extra, "JAVA_TOOL_OPTIONS="+jto)
 	}
 	if len(extra) > 0 {
 		cmd.Env = append(baseEnv, extra...)
@@ -1963,6 +2062,11 @@ func (r *Runner) setupRSP(j *job) {
 		return
 	}
 
+	r.mu.Lock()
+	rspJH := r.javaHome
+	r.mu.Unlock()
+	alignTomcatConsoleEncodingWithRSP(tomcatHome, rspJH, j.logs)
+
 	// Ensure the exploded WAR exists (build if needed) so it can be added as a deployable.
 	j.set(StatusBuilding, "")
 	explodedPath := findExplodedWar(dir)
@@ -1983,7 +2087,11 @@ func (r *Runner) setupRSP(j *job) {
 
 	// --- RSP API 자동화 경로 (RSP 백엔드가 실행 중인 경우) ---
 	if explodedPath != "" {
-		if port, perr := findRSPPort(); perr == nil && port > 0 {
+		port, perr := findRSPPort()
+		if perr != nil || port <= 0 {
+			j.logs.Append("[info] RSP 백엔드 미감지 — 파일 방식으로 진행합니다 (VSCode에서 RSP가 켜져 있어야 자동 기동됩니다)")
+		}
+		if perr == nil && port > 0 {
 			j.logs.Append(fmt.Sprintf("[info] RSP 백엔드 감지 (port %d) — 생성·기동·배포를 자동화합니다", port))
 			serverID := rspServerID
 			typeID := rspTomcatTypeID(tomcatHome)
@@ -2370,6 +2478,11 @@ type containerSpec struct {
 	timeout      time.Duration
 	pollInterval time.Duration
 	notReadyErr  string
+	// hostPort is the published host port. When > 0 and the container is not
+	// already running, a pre-flight check fails fast with a clear message if
+	// another process (e.g. a locally installed MySQL) holds the port, instead
+	// of surfacing docker's raw bind error after an image pull.
+	hostPort int
 	// recreateOnCrash, when true, replaces (docker rm -f -v + recreate)
 	// a container found stopped with a non-zero exit code instead of
 	// `docker start`-ing it, since some crash-loop causes (e.g. a
@@ -2412,29 +2525,45 @@ func ensureDockerContainer(spec containerSpec, logs *logbuf.Buf) error {
 	case strings.TrimSpace(string(out)) == "true":
 		logs.Append(fmt.Sprintf("[info] 기존 %s 컨테이너 재사용: %s", spec.displayName, spec.name))
 	default:
+		// The container is not running, so binding spec.hostPort will be
+		// attempted; fail fast with a clear message if another process (e.g. a
+		// locally installed MySQL service) already holds it.
+		if spec.hostPort > 0 && portListening(spec.hostPort, 500*time.Millisecond) {
+			return fmt.Errorf("호스트 포트 %d를 다른 프로세스가 사용 중입니다. 로컬 %s 서비스 등을 중지한 뒤 다시 시도하세요", spec.hostPort, spec.displayName)
+		}
 		// Container may exist but stopped -> start/recreate it; otherwise create fresh.
 		status, _ := exec.Command("docker", "inspect", "-f", "{{.State.Status}}", spec.name).Output()
-		if strings.TrimSpace(string(status)) == "" {
+		switch strings.TrimSpace(string(status)) {
+		case "":
 			if err := createFresh(); err != nil {
 				return err
 			}
-			break
-		}
-		crashed := false
-		if spec.recreateOnCrash {
-			exitCode, _ := exec.Command("docker", "inspect", "-f", "{{.State.ExitCode}}", spec.name).Output()
-			crashed = strings.TrimSpace(string(exitCode)) != "0"
-		}
-		if crashed {
-			logs.Append(fmt.Sprintf("[warn] %s 컨테이너가 비정상 종료 상태입니다 — 새로 생성합니다", spec.displayName))
+		case "created":
+			// "created" means the container never started (e.g. docker run's
+			// port bind failed) — it holds no data, and `docker start` would
+			// keep failing for the same reason, so replace it.
+			logs.Append(fmt.Sprintf("[warn] 기동된 적 없는 %s 컨테이너가 남아 있습니다 — 새로 생성합니다", spec.displayName))
 			exec.Command("docker", "rm", "-f", "-v", spec.name).Run()
 			if err := createFresh(); err != nil {
 				return err
 			}
-		} else {
-			logs.Append(fmt.Sprintf("[info] 정지된 %s 컨테이너를 재시작합니다", spec.displayName))
-			if err := exec.Command("docker", "start", spec.name).Run(); err != nil {
-				return fmt.Errorf("%s 컨테이너 재시작 실패: %w", spec.displayName, err)
+		default:
+			crashed := false
+			if spec.recreateOnCrash {
+				exitCode, _ := exec.Command("docker", "inspect", "-f", "{{.State.ExitCode}}", spec.name).Output()
+				crashed = strings.TrimSpace(string(exitCode)) != "0"
+			}
+			if crashed {
+				logs.Append(fmt.Sprintf("[warn] %s 컨테이너가 비정상 종료 상태입니다 — 새로 생성합니다", spec.displayName))
+				exec.Command("docker", "rm", "-f", "-v", spec.name).Run()
+				if err := createFresh(); err != nil {
+					return err
+				}
+			} else {
+				logs.Append(fmt.Sprintf("[info] 정지된 %s 컨테이너를 재시작합니다", spec.displayName))
+				if out, err := exec.Command("docker", "start", spec.name).CombinedOutput(); err != nil {
+					return fmt.Errorf("%s 컨테이너 재시작 실패: %w (%s)", spec.displayName, err, strings.TrimSpace(string(out)))
+				}
 			}
 		}
 	}
@@ -2482,6 +2611,7 @@ func ensureMySQLContainer(logs *logbuf.Buf) error {
 		timeout:      120 * time.Second,
 		pollInterval: 2 * time.Second,
 		notReadyErr:  "MySQL이 120초 내에 준비되지 않았습니다",
+		hostPort:     launcherMySQLPort,
 		// recreateOnCrash left false: MySQL's imported schemas live in the
 		// container and must never be wiped automatically.
 	}, logs)
@@ -2517,6 +2647,7 @@ func ensureRedisContainer(port int, password string, logs *logbuf.Buf) error {
 		timeout:         60 * time.Second,
 		pollInterval:    1 * time.Second,
 		notReadyErr:     "Redis가 60초 내에 준비되지 않았습니다",
+		hostPort:        port,
 		recreateOnCrash: true,
 	}, logs)
 }
@@ -2553,6 +2684,7 @@ func ensureRabbitMQContainer(logs *logbuf.Buf) error {
 		timeout:         120 * time.Second,
 		pollInterval:    2 * time.Second,
 		notReadyErr:     "RabbitMQ가 120초 내에 준비되지 않았습니다",
+		hostPort:        5672,
 		recreateOnCrash: true,
 	}, logs)
 }

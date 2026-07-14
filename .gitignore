@@ -5,6 +5,7 @@ launcher/.homepage-build.log
 launcher/dist/
 launcher/egov-launcher
 launcher/egov-launcher.exe
+launcher/egov-launcher-*.exe
 
 # macOS
 .DS_Store
