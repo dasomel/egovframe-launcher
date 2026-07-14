@@ -102,6 +102,12 @@ jobs:
           name: egovframe-launcher-binaries
           path: dist
 
+      - name: Extract release notes for this version only
+        run: |
+          # Take only the latest "## [x.y.z]" section of CHANGELOG.md
+          awk '/^## \[/{ if (found) exit; found=1 } found' CHANGELOG.md > RELEASE_NOTES.md
+          cat RELEASE_NOTES.md
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -110,6 +116,6 @@ jobs:
           draft: false
           prerelease: false
           files: dist/*
-          body_path: CHANGELOG.md
+          body_path: RELEASE_NOTES.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
