@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.4] - 2026-07-15
+
+### Added
+- **DB Setup for Common Components (WAR)**: The launcher now recognizes the `egovframe-common-components` DB layout (`script/ddl/mysql` + `script/dml/mysql` alongside `globals.properties`) as a fourth DB pattern. The shared `com` schema is created without dropping (it coexists with the MSA stack's data), scripts are imported tolerantly, and `globals.properties` is deliberately left untouched — its password is encrypted via `egovPasswordResolver`, so the expected `com`/`com01` MySQL account is provisioned instead. No rebuild needed after DB setup.
+
+### Fixed
+- **msa-edu Build on Windows**: Gradle wrapper build steps declared as `sh gradlew ...` failed with `exec: "sh": executable file not found`. On Windows they now run via the sibling `gradlew.bat` automatically.
+
+### Verified
+- **msa-edu DB Setup**: Confirmed already covered by the existing `compose` pattern — its self-managing `init.sql` runs as-is under root and the `msaportal` user is created from the compose file's `MYSQL_USER`/`MYSQL_PASSWORD`.
+
 ## [1.0.3] - 2026-07-15
 
 ### Fixed

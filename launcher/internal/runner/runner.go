@@ -363,9 +363,13 @@ func (r *Runner) runWAR(j *job, tomcatHome string, customPort int) {
 		}
 	}
 
-	// Ensure all built target/classes and WEB-INF/classes globals.properties match Docker DB credentials
+	// Ensure all built target/classes and WEB-INF/classes globals.properties
+	// match Docker DB credentials. The "script" pattern is excluded: its
+	// password is encrypted (egovPasswordResolver) and must not be rewritten.
 	if dbNeeded {
-		_ = updateAllGlobalsProperties(dir, j.logs)
+		if kind, _, _, _ := detectDBPattern(dir); kind != "script" {
+			_ = updateAllGlobalsProperties(dir, j.logs)
+		}
 	}
 
 	// 3. Locate either Exploded WAR directory or built WAR.
@@ -1402,7 +1406,25 @@ scan:
 	}
 }
 
+// winShellCommand rewrites catalog commands that assume a POSIX shell for
+// Windows. Gradle-wrapper invocations declared as {sh, [.../gradlew, ...]}
+// run via the sibling gradlew.bat (same wrapper, same project-dir semantics);
+// other sh commands are left as-is and fail with a clear message.
+func winShellCommand(c catalog.Command) catalog.Command {
+	if runtime.GOOS != "windows" || c.Name != "sh" || len(c.Args) == 0 || !strings.HasSuffix(c.Args[0], "gradlew") {
+		return c
+	}
+	bat := filepath.FromSlash(c.Args[0]) + ".bat"
+	return catalog.Command{
+		Name: "cmd",
+		Args: append([]string{"/c", bat}, c.Args[1:]...),
+		Dir:  c.Dir,
+		Port: c.Port,
+	}
+}
+
 func (r *Runner) command(j *job, c catalog.Command) *exec.Cmd {
+	c = winShellCommand(c)
 	cmd := exec.Command(c.Name, c.Args...)
 	cmd.Dir = filepath.Join(r.dir(j.target.ID), c.Dir)
 	j.mu.Lock()
@@ -2236,6 +2258,9 @@ func findGlobalsProperties(dir string) string {
 // detectDBPattern sniffs which of the three eGovFrame DB layouts dir uses:
 //   - "war" – DATABASE/mysql/*.sql alongside a globals.properties file (the
 //     eGovFrame templates that require an external MySQL instance to boot).
+//   - "script" – script/ddl/mysql/*.sql (+ script/dml/mysql) alongside a
+//     globals.properties (egovframe-common-components; encrypted password,
+//     shared "com" schema — see setupScriptDatabase).
 //   - "compose" – docker-compose/mysql/init/*.sql (eGovFrame MSA targets
 //     whose services expect a pre-seeded shared MySQL schema).
 //   - "bootprops" – DATABASE/all_<schema>_ddl_mysql.sql paired with a Spring
@@ -2252,6 +2277,17 @@ func detectDBPattern(dir string) (kind, sqlDir, schema, propsPath string) {
 			if !e.IsDir() && strings.HasSuffix(strings.ToLower(e.Name()), ".sql") {
 				if findGlobalsProperties(dir) != "" {
 					return "war", warSQLDir, "", ""
+				}
+				break
+			}
+		}
+	}
+	scriptDDLDir := filepath.Join(dir, "script", "ddl", "mysql")
+	if entries, err := os.ReadDir(scriptDDLDir); err == nil {
+		for _, e := range entries {
+			if !e.IsDir() && strings.HasSuffix(strings.ToLower(e.Name()), ".sql") {
+				if findGlobalsProperties(dir) != "" {
+					return "script", filepath.Join(dir, "script"), "", ""
 				}
 				break
 			}
@@ -2342,7 +2378,7 @@ func parseMySQLDBName(globalsPropsPath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	re := regexp.MustCompile(`(?m)^Globals\.Url\s*=\s*jdbc:.*mysql://[^/]+/([A-Za-z0-9_]+)`)
+	re := regexp.MustCompile(`(?m)^Globals\.(?:[A-Za-z0-9_]+\.)?Url\s*=\s*jdbc:.*mysql://[^/]+/([A-Za-z0-9_]+)`)
 	m := re.FindSubmatch(data)
 	if m == nil {
 		return "", fmt.Errorf("globals.properties에서 MySQL DB 이름을 찾지 못했습니다")
@@ -2784,6 +2820,10 @@ func setupProjectDatabase(dir string, logs *logbuf.Buf) error {
 	dbSetupMu.Lock()
 	defer dbSetupMu.Unlock()
 
+	if kind, sqlDir, _, _ := detectDBPattern(dir); kind == "script" {
+		return setupScriptDatabase(dir, sqlDir, logs)
+	}
+
 	if err := ensureMySQLContainer(logs); err != nil {
 		return err
 	}
@@ -2833,6 +2873,58 @@ func setupProjectDatabase(dir string, logs *logbuf.Buf) error {
 	}
 	logs.Append("[success] SQL 임포트 완료")
 	return updateAllGlobalsProperties(dir, logs)
+}
+
+// setupScriptDatabase provisions the shared MySQL container for the
+// egovframe-common-components layout: script/ddl/mysql/*.sql then
+// script/dml/mysql/*.sql, imported into the schema named by
+// globals.properties (usually "com"). Two deliberate differences from the
+// "war" flow:
+//   - The schema is created WITHOUT dropping: "com" is shared with the MSA
+//     common-components stack (different table names), and a drop would
+//     destroy its data.
+//   - globals.properties is left untouched: its password goes through
+//     egovPasswordResolver (encrypted), so rewriting it to plaintext would
+//     break the datasource. Instead the app user it decrypts to (com/com01)
+//     is (re)created.
+func setupScriptDatabase(dir, scriptDir string, logs *logbuf.Buf) error {
+	if err := ensureMySQLContainer(logs); err != nil {
+		return err
+	}
+	schema := defaultComposeDBName
+	if globalsPath := findGlobalsProperties(dir); globalsPath != "" {
+		if s, err := parseMySQLDBName(globalsPath); err == nil {
+			schema = s
+		}
+	}
+	logs.Append(fmt.Sprintf("[info] 데이터베이스 '%s' 준비 (공유 스키마 보호 — DROP 없이 생성)", schema))
+	createCmd := exec.Command("docker", "exec", "-e", "MYSQL_PWD="+launcherMySQLRootPass, launcherMySQLContainer, "mysql", "-uroot",
+		"-e", fmt.Sprintf("CREATE DATABASE IF NOT EXISTS `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;", schema))
+	if out, err := createCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("데이터베이스 생성 실패: %w (%s)", err, strings.TrimSpace(string(out)))
+	}
+	if err := ensureMySQLAppUser(defaultComposeDBUser, defaultComposeDBPass); err != nil {
+		return err
+	}
+	for _, sub := range []string{"ddl", "dml"} {
+		sqlDir := filepath.Join(scriptDir, sub, "mysql")
+		entries, err := os.ReadDir(sqlDir)
+		if err != nil {
+			continue
+		}
+		var files []string
+		for _, e := range entries {
+			if !e.IsDir() && strings.HasSuffix(strings.ToLower(e.Name()), ".sql") {
+				files = append(files, e.Name())
+			}
+		}
+		sort.Strings(files)
+		if err := importSQLFiles(sqlDir, schema, files, logs); err != nil {
+			return err
+		}
+	}
+	logs.Append("[success] SQL 임포트 완료 — 접속정보는 globals.properties의 기존 값(com 계정, 암호화 password)을 그대로 사용합니다")
+	return nil
 }
 
 // importSQLFiles imports each named file in sqlDir into dbName, in the
@@ -3155,6 +3247,17 @@ func (r *Runner) setupDB(j *job) {
 			return
 		}
 		j.logs.Append("[success] DB 설정 완료 — Run(재기동)하면 반영됩니다")
+		j.set(StatusDone, "")
+
+	case "script":
+		// egovframe-common-components: globals.properties stays as-is (the
+		// encrypted com-account credentials already point at 127.0.0.1:3306),
+		// so no rebuild is needed after the import.
+		if err := setupProjectDatabase(dir, j.logs); err != nil {
+			j.set(StatusError, "DB 구성 실패: "+err.Error())
+			return
+		}
+		j.logs.Append("[success] DB 설정 완료 — 재빌드 불필요, 바로 배포/Run 하세요")
 		j.set(StatusDone, "")
 
 	default: // "war"

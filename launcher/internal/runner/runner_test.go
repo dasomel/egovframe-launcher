@@ -739,3 +739,55 @@ func TestParseRedisConfigAbsentWhenMissing(t *testing.T) {
 		t.Errorf("parseRedisConfig = (%d, %q), want (0, \"\")", port, password)
 	}
 }
+
+func TestDetectDBPatternScript(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "script", "ddl", "mysql"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "script", "ddl", "mysql", "com_DDL_mysql.sql"), []byte("CREATE TABLE X (id INT);"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	propsDir := filepath.Join(dir, "src", "main", "resources", "egovframework", "egovProps")
+	if err := os.MkdirAll(propsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	props := "Globals.DbType = mysql\nGlobals.mysql.Url=jdbc:log4jdbc:mysql://127.0.0.1:3306/com\n"
+	if err := os.WriteFile(filepath.Join(propsDir, "globals.properties"), []byte(props), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	kind, sqlDir, _, _ := detectDBPattern(dir)
+	if kind != "script" {
+		t.Fatalf("kind = %q, want script", kind)
+	}
+	if sqlDir != filepath.Join(dir, "script") {
+		t.Errorf("sqlDir = %q, want %q", sqlDir, filepath.Join(dir, "script"))
+	}
+
+	name, err := parseMySQLDBName(filepath.Join(propsDir, "globals.properties"))
+	if err != nil || name != "com" {
+		t.Errorf("parseMySQLDBName = (%q, %v), want (com, nil)", name, err)
+	}
+}
+
+func TestWinShellCommandGradlew(t *testing.T) {
+	c := winShellCommand(catalog.Command{Name: "sh", Args: []string{"../config/gradlew", "build", "-x", "test"}, Dir: "backend/config"})
+	if runtime.GOOS != "windows" {
+		if c.Name != "sh" {
+			t.Fatalf("non-windows must be unchanged, got %q", c.Name)
+		}
+		return
+	}
+	if c.Name != "cmd" || len(c.Args) < 2 || c.Args[0] != "/c" || !strings.HasSuffix(c.Args[1], "gradlew.bat") {
+		t.Fatalf("unexpected translation: %q %v", c.Name, c.Args)
+	}
+	if c.Dir != "backend/config" {
+		t.Errorf("Dir not preserved: %q", c.Dir)
+	}
+	// Non-gradlew sh commands stay untouched.
+	orig := catalog.Command{Name: "sh", Args: []string{"-c", "echo hi"}}
+	if got := winShellCommand(orig); got.Name != "sh" {
+		t.Errorf("non-gradlew sh must be unchanged, got %q", got.Name)
+	}
+}
