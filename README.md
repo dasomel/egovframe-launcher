@@ -1,5 +1,7 @@
 # 전자정부 표준프레임워크 VSCode 런처 및 스크립트 툴킷 (egovframe-launcher)
 
+![License](https://img.shields.io/badge/License-Apache%202.0-lightgrey)
+
 전자정부 표준프레임워크 소스 코드를 VSCode 환경에서 손쉽게 빌드, Tomcat/Docker 연동 기동 및 디버깅을 제어하기 위한 단일 바이너리 런처(GUI 대시보드) 및 보조 CLI 셸 스크립트 툴킷입니다.
 
 
