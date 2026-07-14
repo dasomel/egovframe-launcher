@@ -1,9 +1,8 @@
-name: Go Multi-Platform Build
+name: Go Multi-Platform Build & Auto Release
 
 on:
   push:
     branches: [ main, master ]
-    tags: [ 'v*' ]
   pull_request:
     branches: [ main, master ]
 
@@ -57,15 +56,45 @@ jobs:
           retention-days: 5
 
   release:
-    name: Create Release
+    name: Auto Tag & Release
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version from Changelog
+        id: get_version
+        run: |
+          # Extract the latest version from CHANGELOG.md (e.g. [1.0.0])
+          VERSION=$(grep -oE '## \[[0-9]+\.[0-9]+\.[0-9]+\]' CHANGELOG.md | head -n1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          if [ -z "$VERSION" ]; then
+            echo "Error: Version not found in CHANGELOG.md"
+            exit 1
+          fi
+          echo "VERSION=v$VERSION" >> $GITHUB_ENV
+          echo "Detected version: v$VERSION"
+
+      - name: Create and push tag if not exists
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Check if tag already exists in remote
+          if git rev-parse "${{ env.VERSION }}" >/dev/null 2>&1; then
+            echo "Tag ${{ env.VERSION }} already exists. Skipping tag creation."
+            echo "TAG_EXISTS=true" >> $GITHUB_ENV
+          else
+            echo "Creating tag ${{ env.VERSION }}"
+            git tag "${{ env.VERSION }}"
+            git push origin "${{ env.VERSION }}"
+            echo "TAG_EXISTS=false" >> $GITHUB_ENV
+          fi
 
       - name: Download Build Artifacts
         uses: actions/download-artifact@v4
@@ -73,10 +102,14 @@ jobs:
           name: egovframe-launcher-binaries
           path: dist
 
-      - name: Create Release Draft
+      - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          draft: true
+          tag_name: ${{ env.VERSION }}
+          name: Release ${{ env.VERSION }}
+          draft: false
+          prerelease: false
           files: dist/*
+          body_path: CHANGELOG.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
