@@ -342,6 +342,7 @@ func (r *Runner) runWAR(j *job, tomcatHome string, customPort int) {
 		return
 	}
 	j.set(StatusBuilding, "")
+	patchJDBCScriptEncoding(dir, j.logs)
 
 	// Automatically setup Docker DB container if project requires a database
 	dbNeeded := needsDatabase(dir)
@@ -697,6 +698,52 @@ func alignTomcatConsoleEncodingWithRSP(tomcatHome, javaHome string, logs *logbuf
 	}
 	if !strings.EqualFold(enc, "UTF-8") {
 		logs.Append("[info] Tomcat 콘솔 로그 인코딩을 RSP 백엔드 문자셋(" + enc + ")에 맞췄습니다 (VSCode 한글 로그 깨짐 방지)")
+	}
+}
+
+// jdbcScriptRe matches a Spring <jdbc:script .../> element opening tag.
+var jdbcScriptRe = regexp.MustCompile(`<jdbc:script\b[^>]*>`)
+
+// patchJDBCScriptEncoding adds encoding="UTF-8" to every <jdbc:script> element
+// that lacks one, in all *.xml files under dir (source and build output alike).
+// Spring's ResourceDatabasePopulator otherwise reads seed SQL with the JVM
+// default charset — MS949 on Korean Windows for JDK ≤ 17 when Tomcat is
+// launched by the RSP backend — which corrupts UTF-8 Korean seed data in
+// embedded-database templates (e.g. the simple-homepage HSQLDB seed).
+func patchJDBCScriptEncoding(dir string, logs *logbuf.Buf) {
+	count := 0
+	_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if info.IsDir() {
+			if info.Name() == ".git" || info.Name() == "node_modules" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(info.Name(), ".xml") {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil || !strings.Contains(string(data), "<jdbc:script") {
+			return nil
+		}
+		out := jdbcScriptRe.ReplaceAllStringFunc(string(data), func(m string) string {
+			if strings.Contains(m, "encoding=") {
+				return m
+			}
+			return strings.Replace(m, "<jdbc:script", `<jdbc:script encoding="UTF-8"`, 1)
+		})
+		if out != string(data) {
+			if os.WriteFile(path, []byte(out), info.Mode()) == nil {
+				count++
+			}
+		}
+		return nil
+	})
+	if count > 0 {
+		logs.Append(fmt.Sprintf("[info] %d개 XML의 <jdbc:script>에 encoding=\"UTF-8\"을 지정했습니다 (임베디드 DB 시드 한글 깨짐 방지)", count))
 	}
 }
 
@@ -2066,6 +2113,7 @@ func (r *Runner) setupRSP(j *job) {
 	rspJH := r.javaHome
 	r.mu.Unlock()
 	alignTomcatConsoleEncodingWithRSP(tomcatHome, rspJH, j.logs)
+	patchJDBCScriptEncoding(dir, j.logs)
 
 	// Ensure the exploded WAR exists (build if needed) so it can be added as a deployable.
 	j.set(StatusBuilding, "")

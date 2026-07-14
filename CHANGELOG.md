@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2026-07-15
+
+### Fixed
+- **Embedded-DB Seed Data Corruption (Windows)**: Korean seed data in embedded-database WAR templates (e.g. simple-homepage's HSQLDB `shtdb.sql`) rendered as mojibake when Tomcat ran under the RSP backend, because Spring's `<jdbc:script>` reads seed SQL with the JVM default charset (MS949 on Korean Windows). The launcher now injects `encoding="UTF-8"` into `<jdbc:script>` elements across cloned WAR projects before build/deploy. MySQL-backed templates (portal, enterprise) were unaffected since their schemas are imported via the container's `utf8mb4` client.
+
 ## [1.0.1] - 2026-07-15
 
 ### Fixed
