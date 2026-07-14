@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>eGovFrame VSCode Launcher</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>eGovFrame VSCode Launcher</h1>
+    <div class="header-right">
+      <div id="globalPrereqs" class="prereqs"></div>
+      <button id="toggleConfig" type="button" class="btn-sm">설정</button>
+      <button id="toggleMonitor" type="button" class="btn-sm">모니터링</button>
+      <button id="toggleLegend" type="button" class="btn-sm">범례</button>
+      <button id="toggleGuide" type="button" class="btn-sm">설치 가이드</button>
+    </div>
+  </header>
+  <main class="layout">
+    <section class="cards-column">
+      <div id="monitor" class="card monitor hidden">
+        <div class="monitor-head">
+          <h3>모니터링 — 서비스 현황</h3>
+          <div class="monitor-legend">
+            <span><span class="badge running">running</span> 실행 중</span>
+            <span><span class="badge building">building</span> 빌드/기동 중</span>
+            <span><span class="badge cloned">cloned</span> 소스 준비됨</span>
+            <span><span class="badge error">error</span> 오류</span>
+          </div>
+        </div>
+        <div id="monitorList"></div>
+      </div>
+      <div id="configCard" class="card config-panel">
+        <div class="config-header" id="configHeader">
+          <h3>설정 (Configuration)</h3>
+          <button id="collapseConfigBtn" type="button" class="btn-icon" title="설정 접기/펼치기" aria-label="설정 접기/펼치기">▲</button>
+        </div>
+        <div id="configBody" class="config-grid">
+          <div class="config-field">
+            <label for="vscodePathInput">VSCode 실행 명령/경로:</label>
+            <div class="input-group">
+              <input type="text" id="vscodePathInput" />
+              <button id="saveVSCode" type="button">저장</button>
+            </div>
+          </div>
+          <div class="config-field">
+            <label for="workspacePathInput">저장소 위치 (Workspace):</label>
+            <div class="input-group">
+              <input type="text" id="workspacePathInput" />
+              <button id="saveConfig" type="button" class="primary">적용</button>
+            </div>
+          </div>
+          <div class="config-field">
+            <label for="tomcatPathInput">Tomcat 설치 경로:</label>
+            <div class="input-group">
+              <input type="text" id="tomcatPathInput" placeholder="예: /Users/m/tomcat" />
+              <button id="saveTomcat" type="button">저장</button>
+            </div>
+          </div>
+          <div class="config-field">
+            <label for="rspTomcatPortInput">RSP 공유 Tomcat 포트:</label>
+            <div class="input-group">
+              <input type="number" id="rspTomcatPortInput" min="1024" max="65535" placeholder="8080" />
+              <button id="saveRspPort" type="button">저장</button>
+            </div>
+          </div>
+          <div class="config-field">
+            <label>VSCode Tomcat 확장 (Community Server Connectors):</label>
+            <div class="input-group">
+              <span id="extStatus">확인 중…</span>
+              <button id="installExtBtn" type="button">설치</button>
+            </div>
+          </div>
+          <div class="config-field">
+            <label for="jdkSelect">JDK 선택 (빌드/실행 환경):</label>
+            <div class="input-group">
+              <select id="jdkSelect"></select>
+              <button id="saveJdk" type="button">적용</button>
+            </div>
+            <div id="jdkHomePath" style="font-size:.75rem;color:var(--muted);margin-top:2px;word-break:break-all;"></div>
+          </div>
+
+          <div class="config-field checkbox-field">
+            <label>
+              <input type="checkbox" id="skipTestsInput" /> Maven 빌드 시 테스트 건너뛰기 (Skip Tests)
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tool Installation Guide -->
+      <div id="installGuide" class="card install-guide hidden">
+        <h3>필수 도구 설치 가이드</h3>
+        <div class="os-tabs">
+          <button id="tabMac" class="tab-btn active" type="button">macOS</button>
+          <button id="tabWin" class="tab-btn" type="button">Windows</button>
+        </div>
+        <div id="guideMac" class="guide-content">
+          <ul>
+            <li><strong>Git:</strong> 터미널에서 <code>brew install git</code> 실행 또는 Xcode Command Line Tools 자동 설치 팝업 확인</li>
+            <li><strong>Maven (mvn):</strong> 터미널에서 <code>brew install maven</code> 실행</li>
+            <li><strong>Node.js / npm:</strong> 터미널에서 <code>brew install node</code> 실행</li>
+            <li><strong>Docker:</strong> <a href="https://www.docker.com/products/docker-desktop/" target="_blank">Docker Desktop for Mac</a> 설치</li>
+          </ul>
+        </div>
+        <div id="guideWin" class="guide-content hidden">
+          <ul>
+            <li><strong>Git:</strong> <a href="https://git-scm.com/download/win" target="_blank">Git 공식 사이트</a>에서 다운로드 혹은 <code>winget install --id Git.Git</code> 실행</li>
+            <li><strong>Maven (mvn):</strong> <a href="https://maven.apache.org/download.cgi" target="_blank">Maven 공식 사이트</a> 다운로드 혹은 <code>winget install --id Apache.Maven</code> 실행</li>
+            <li><strong>Node.js / npm:</strong> <a href="https://nodejs.org/" target="_blank">Node.js 공식 사이트</a> 다운로드 혹은 <code>winget install --id OpenJS.NodeJS</code> 실행</li>
+            <li><strong>Docker:</strong> <a href="https://www.docker.com/products/docker-desktop/" target="_blank">Docker Desktop for Windows</a> 설치 (WSL2 필수)</li>
+          </ul>
+        </div>
+      </div>
+
+      <div id="legend" class="card legend hidden">
+        <h3>범례 (Legend)</h3>
+        <div class="legend-section">
+          <strong>Tier — 실행 난이도/성격</strong>
+          <ul>
+            <li><span class="tier">Tier 1</span> 즉시 기동 — 추가 인프라 없이 바로 실행 (예: boot-sample, simple-react)</li>
+            <li><span class="tier">Tier 2</span> 빌드/라이브러리 — 띄울 화면 없이 빌드·설치만 (예: runtime)</li>
+            <li><span class="tier">Tier 3</span> 인프라 필요 — Docker·Ollama 등 사전 준비 필요 (예: msa, ai-rag)</li>
+          </ul>
+        </div>
+        <div class="legend-section">
+          <strong>DeployType — 기동 방식</strong>
+          <ul>
+            <li><code>boot</code> Spring Boot 내장 톰캣 (▶ Run) · <code>war</code> 외부 Tomcat 배포 (▶ Tomcat 기동) · <code>react</code> Vite 개발서버 (npm) · <code>lib</code> 빌드 전용</li>
+          </ul>
+        </div>
+        <div class="legend-section">
+          <strong>상태(Status) 배지</strong>
+          <ul class="legend-badges">
+            <li><span class="badge idle">idle</span> 아직 시작 안 함 (소스 없음)</li>
+            <li><span class="badge cloned">cloned</span> 소스 준비됨 (클론 완료, 실행 전)</li>
+            <li><span class="badge cloning">cloning</span> 소스 내려받는 중</li>
+            <li><span class="badge building">building</span> 빌드 중 (mvn/npm)</li>
+            <li><span class="badge running">running</span> 실행 중 (포트 표시)</li>
+            <li><span class="badge done">done</span> 완료 (클론/빌드 완료 또는 정상 종료)</li>
+            <li><span class="badge stopped">stopped</span> 사용자가 중지함</li>
+            <li><span class="badge error">error</span> 오류 발생 (로그 확인)</li>
+          </ul>
+        </div>
+      </div>
+
+      <div id="cards" class="cards" aria-label="targets"></div>
+    </section>
+    <section class="console">
+      <div class="console-head">
+        <span id="logTitle">로그</span>
+        <div class="console-actions">
+          <select id="logServiceFilter" title="서비스별 로그 필터">
+            <option value="">전체 서비스</option>
+          </select>
+          <button id="toggleWrapBtn" type="button" class="btn-sm" title="자동 줄바꿈(개행) On/Off">↩ 줄바꿈 켜짐</button>
+          <button id="fullscreenLog" type="button" title="로그 콘솔 전체화면">⛶ 전체화면</button>
+          <button id="copyLog" type="button">copy</button>
+          <button id="clearLog" type="button">clear</button>
+        </div>
+      </div>
+      <pre id="log" class="log"></pre>
+    </section>
+  </main>
+  <!-- Tomcat 연동 안내 모달 -->
+  <div id="tomcatModalBackdrop" class="modal-backdrop hidden"></div>
+  <div id="tomcatModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="tomcatModalTitle">
+    <div class="modal-header">
+      <h3 id="tomcatModalTitle">Tomcat 기동 (VSCode 플러그인)</h3>
+    </div>
+    <div class="modal-body">
+      <p id="tomcatModalExtStatus" class="note"></p>
+      <p>이 경로는 <strong>VSCode의 Community Server Connectors 플러그인</strong>으로 Tomcat을 직접 띄우는 방식입니다. (확장 목록에는 "Community Server Connectors"로 표시되며, "Tomcat"이라는 이름의 별도 확장이 아닙니다.) 한 번에 자동으로 띄우려면 카드의 <strong>▶ Tomcat 기동 (런처)</strong>를 사용하세요.</p>
+      <ol>
+        <li id="tomcatStepInstall">미설치라면 아래 <strong>설치</strong> 버튼으로 확장을 설치하세요.</li>
+        <li>설치 직후라면 <strong>Developer: Reload Window</strong> (Cmd/Ctrl+Shift+P → "Reload Window")로 새로고침하세요.</li>
+        <li>좌측 <strong>Servers</strong> 패널 → <strong>Create New Server</strong> → Tomcat 선택, 설정 패널의 <strong>Tomcat 설치 경로</strong>와 동일하게 지정하세요.</li>
+        <li>빌드된 WAR(<code>target/*.war</code>)를 서버에 <strong>Add Deployment</strong> 한 뒤 서버를 <strong>Start</strong> 하세요.</li>
+      </ol>
+    </div>
+    <div class="modal-footer">
+      <button id="tomcatModalInstall" type="button" class="primary">설치</button>
+      <button id="tomcatModalClose" type="button">닫기</button>
+    </div>
+  </div>
+  <!-- 기본 로그인 계정 모달 -->
+  <div id="accountsModalBackdrop" class="modal-backdrop hidden"></div>
+  <div id="accountsModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="accountsModalTitle">
+    <div class="modal-header">
+      <h3 id="accountsModalTitle">기본 계정</h3>
+    </div>
+    <div class="modal-body">
+      <div id="accountsModalBody" class="accounts-list"></div>
+    </div>
+    <div class="modal-footer">
+      <span class="note accounts-modal-note">시드 데이터 기준 기본 계정입니다.</span>
+      <button id="accountsModalClose" type="button">닫기</button>
+    </div>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>

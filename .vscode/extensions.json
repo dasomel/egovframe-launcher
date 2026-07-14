@@ -1,0 +1,9 @@
+{
+  "recommendations": [
+    "golang.go",
+    "vscjava.vscode-java-pack",
+    "vmware.vscode-boot-dev-pack",
+    "redhat.vscode-community-server-connector",
+    "egovframe.vscode-initializr"
+  ]
+}

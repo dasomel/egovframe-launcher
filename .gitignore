@@ -1,0 +1,14 @@
+.idea/
+launcher/.work/
+launcher/.launcher.log
+launcher/.homepage-build.log
+launcher/dist/
+launcher/egov-launcher
+launcher/egov-launcher.exe
+
+# macOS
+.DS_Store
+**/.DS_Store
+!/slides/
+!/.superpowers/
+!/docs/superpowers/
