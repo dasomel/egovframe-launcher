@@ -49,7 +49,7 @@ jobs:
           ls -la
 
       - name: Upload Build Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: egovframe-launcher-binaries
           path: launcher/dist/*
