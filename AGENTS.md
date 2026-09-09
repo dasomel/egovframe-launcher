@@ -12,7 +12,9 @@ Read `README.md`, architecture/design docs, launcher workflow docs, the matching
 - Let formatter/linter rules own deterministic style. Comments explain why, invariants, hazards, or compatibility constraints.
 - For bugs, prefer: reproduce -> failing test/evidence -> minimal fix -> same test passes -> relevant regression suite.
 - Use real toolchain/process verification when mocked tests cannot prove installation or launcher behavior.
-- `make verify` at the repository root is the canonical local baseline (format check + Go tests + current-platform build); run `make cross` when platform-specific compilation can be affected.
+- `make verify` at the repository root is the canonical local baseline (gofumpt check against the explicit legacy-debt baseline + `go vet` + short Go tests + current-platform build); run `make cross` when platform-specific compilation can be affected.
+- `.gofumpt-baseline` may contain only known pre-existing formatter debt. New formatter drift fails, and a resolved baseline entry also fails until the obsolete exception is removed.
+- `make test` intentionally uses Go short mode so Docker-backed integration tests do not make the deterministic baseline environment-dependent; exercise integration/runtime targets explicitly when they matter.
 - Do not imply that the Go baseline proves Maven/JDK/Tomcat/Docker/npm or browser/runtime behavior; exercise the relevant real target lifecycle when those properties matter.
 - Do not claim completion without stating which checks actually ran and their scope.
 - End substantive work as A) complete/verified, B) meaningful verified progress with the next blocker isolated, or C) stop with evidence when further work requires unjustified scope, fragile patches, unsupported assumptions, or unacceptable risk.
