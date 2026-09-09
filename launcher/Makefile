@@ -15,7 +15,7 @@ fmt:
 
 fmt-check:
 	@test -x "$(GOFUMPT)" || (echo "gofumpt not found at $(GOFUMPT); install with: go install mvdan.cc/gofumpt@v0.12.0"; exit 1)
-	@test -z "$$($(GOFUMPT) -l .)" || (echo "gofumpt needed:"; $(GOFUMPT) -l .; exit 1)
+	@files="$$($(GOFUMPT) -l .)"; test -z "$$files" || (echo "gofumpt needed:"; printf '%s\n' "$$files"; echo; $(GOFUMPT) -d .; exit 1)
 
 lint:
 	go vet ./...
