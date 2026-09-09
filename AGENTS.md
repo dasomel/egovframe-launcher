@@ -2,7 +2,7 @@
 
 eGovFrame Launcher follows the OpenForge context-efficient agent engineering model.
 
-Read `README.md`, architecture/design docs, launcher workflow docs, and the relevant issue/spec before editing.
+Read `README.md`, architecture/design docs, launcher workflow docs, the matching project skill under `.agents/skills/`, and the relevant issue/spec before editing.
 
 - Make the smallest coherent change that solves the requested problem.
 - Do not auto-fix unrelated findings; report them separately.
@@ -12,7 +12,10 @@ Read `README.md`, architecture/design docs, launcher workflow docs, and the rele
 - Let formatter/linter rules own deterministic style. Comments explain why, invariants, hazards, or compatibility constraints.
 - For bugs, prefer: reproduce -> failing test/evidence -> minimal fix -> same test passes -> relevant regression suite.
 - Use real toolchain/process verification when mocked tests cannot prove installation or launcher behavior.
+- `make verify` at the repository root is the canonical local baseline (format check + Go tests + current-platform build); run `make cross` when platform-specific compilation can be affected.
+- Do not imply that the Go baseline proves Maven/JDK/Tomcat/Docker/npm or browser/runtime behavior; exercise the relevant real target lifecycle when those properties matter.
 - Do not claim completion without stating which checks actually ran and their scope.
 - End substantive work as A) complete/verified, B) meaningful verified progress with the next blocker isolated, or C) stop with evidence when further work requires unjustified scope, fragile patches, unsupported assumptions, or unacceptable risk.
 
 Reference: https://github.com/dasomel/openforge/blob/main/docs/agent-engineering.md
+Agent Skills standard: https://github.com/dasomel/openforge/blob/main/docs/agent-skills.md
