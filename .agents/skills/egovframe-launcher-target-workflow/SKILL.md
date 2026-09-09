@@ -44,7 +44,7 @@ metadata:
 
 ## Verification
 
-`make verify` is the canonical deterministic local baseline: gofumpt check, `go vet`, short-mode Go tests, and current-platform build. `make test` intentionally excludes Docker-backed integration paths so the baseline remains reproducible; use the target-specific integration/runtime path when that behavior matters. Separate baseline evidence from target runtime/toolchain/browser evidence. A successful Go build does not prove Tomcat deployment, Docker infrastructure, JDK compatibility, or service readiness.
+`make verify` is the canonical deterministic local baseline: gofumpt check against the explicit `.gofumpt-baseline`, `go vet`, short-mode Go tests, and current-platform build. The formatter baseline is limited to known pre-existing debt: any new drift fails, and a resolved baseline entry also fails until removed. `make test` intentionally excludes Docker-backed integration paths so the baseline remains reproducible; use the target-specific integration/runtime path when that behavior matters. Separate baseline evidence from target runtime/toolchain/browser evidence. A successful Go build does not prove Tomcat deployment, Docker infrastructure, JDK compatibility, or service readiness.
 
 This skill remains `draft`. Promote it only after a fresh-session replay records both a successful happy path and an edge/failure case under the OpenForge skill-verification evidence contract.
 
