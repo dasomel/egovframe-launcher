@@ -8,13 +8,17 @@ GOFUMPT := $(shell go env GOPATH)/bin/gofumpt
 VERSION := v$(shell grep -oEm1 '\[[0-9]+\.[0-9]+\.[0-9]+\]' ../CHANGELOG.md | tr -d '[]')
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
-.PHONY: fmt fmt-check test build cross run clean
+.PHONY: fmt fmt-check lint test build cross run clean
 
 fmt:
 	$(GOFUMPT) -w .
 
 fmt-check:
+	@test -x "$(GOFUMPT)" || (echo "gofumpt not found at $(GOFUMPT); install with: go install mvdan.cc/gofumpt@latest"; exit 1)
 	@test -z "$$($(GOFUMPT) -l .)" || (echo "gofumpt needed:"; $(GOFUMPT) -l .; exit 1)
+
+lint:
+	go vet ./...
 
 test:
 	go test ./...
@@ -36,8 +40,6 @@ cross:
 	# Windows
 	GOOS=windows GOARCH=amd64 go build -ldflags="$(LDFLAGS)" -o $(DIST)/$(BINARY)-windows-amd64.exe .
 	GOOS=windows GOARCH=arm64 go build -ldflags="$(LDFLAGS)" -o $(DIST)/$(BINARY)-windows-arm64.exe .
-
-
 
 clean:
 	rm -rf $(BINARY) $(DIST) .work
