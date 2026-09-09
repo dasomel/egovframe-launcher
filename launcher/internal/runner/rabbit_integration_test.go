@@ -31,8 +31,6 @@ func TestEnsureRabbitMQContainer_CookieFix(t *testing.T) {
 		exec.Command("docker", "rm", "-f", "-v", launcherRabbitContainer).Run()
 	})
 
-
-
 	logs := logbuf.New(500)
 
 	// Call the function under test.
