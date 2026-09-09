@@ -6,7 +6,7 @@ compatibility: Requires the eGovFrame Launcher checkout, Go toolchain, and the t
 metadata:
   openforge-scope: project
   openforge-owner: dasomel/egovframe-launcher
-  openforge-maturity: verified
+  openforge-maturity: draft
   openforge-version: "1"
 ---
 
