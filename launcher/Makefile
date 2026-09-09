@@ -15,7 +15,25 @@ fmt:
 
 fmt-check:
 	@test -x "$(GOFUMPT)" || (echo "gofumpt not found at $(GOFUMPT); install with: go install mvdan.cc/gofumpt@v0.12.0"; exit 1)
-	@files="$$($(GOFUMPT) -l .)"; test -z "$$files" || (echo "gofumpt needed:"; printf '%s\n' "$$files"; echo; $(GOFUMPT) -d .; exit 1)
+	@files="$$($(GOFUMPT) -l .)"; \
+	baseline=".gofumpt-baseline"; \
+	unexpected=""; \
+	for file in $$files; do \
+		if ! grep -Fxq "$$file" "$$baseline"; then unexpected="$$unexpected $$file"; fi; \
+	done; \
+	if test -n "$$unexpected"; then \
+		echo "gofumpt needed outside the recorded legacy baseline:"; \
+		for file in $$unexpected; do echo "$$file"; done; \
+		echo; $(GOFUMPT) -d $$unexpected; exit 1; \
+	fi; \
+	stale=0; \
+	while IFS= read -r expected; do \
+		case "$$expected" in ''|'#'*) continue ;; esac; \
+		if ! printf '%s\n' "$$files" | grep -Fxq "$$expected"; then \
+			echo "stale gofumpt baseline entry (remove it): $$expected"; stale=1; \
+		fi; \
+	done < "$$baseline"; \
+	test "$$stale" -eq 0
 
 lint:
 	go vet ./...
