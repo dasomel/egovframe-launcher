@@ -32,7 +32,7 @@ metadata:
 ## Workflow
 
 1. Read `AGENTS.md`, `README.md`, the relevant launcher workflow/architecture docs, and the issue/spec.
-2. Find the nearest existing target of the same lifecycle type and extend the existing domain/process abstraction instead of adding a parallel execution path.
+2. Find the nearest existing target of the same lifecycle type in `launcher/internal/catalog/catalog.go`'s `Targets()` registry (match by `DeployType`: `boot`, `war`, `react`, or `lib`) and extend that `Target` entry plus the matching `DeployType` branch in `launcher/internal/runner` instead of adding a parallel execution path. There is no separate `target` package/module; `Target` is a struct defined in `internal/catalog` and consumed by `internal/runner` (process lifecycle) and `internal/server` (HTTP/UI wiring).
 3. Keep process execution, filesystem mutation, toolchain detection, and UI boundaries separated. Treat public CLI/API changes, installer behavior, credentials/config, and destructive cleanup as design changes.
 4. Make target setup idempotent where it provisions Docker services, schema/data, workspaces, or isolated Tomcat instances.
 5. Preserve target isolation: allocate/configure ports so one target does not silently collide with another; WAR targets use their own runtime instance unless the design explicitly says otherwise.
@@ -60,4 +60,7 @@ This skill remains `draft`. Promote it only after a fresh-session replay records
 - `README.md`
 - root `Makefile`
 - `launcher/Makefile`
+- `launcher/internal/catalog/catalog.go` (`Target` struct, `Targets()` registry, `DeployType`)
+- `launcher/internal/runner/` (process lifecycle branching on `DeployType`)
+- `launcher/internal/server/` (HTTP/UI wiring over `catalog.Target`)
 - `scripts/`
