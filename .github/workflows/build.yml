@@ -56,11 +56,43 @@ jobs:
   release:
     name: Auto Tag & Release
     needs: build
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    # Same-repo PRs run this job as a dry run (SBOM, attestation, verify gate,
+    # egress policy) so the hardened path is proven before merge; tagging and
+    # publishing stay push-to-main only. Fork PRs get no OIDC token, so skip.
+    if: >-
+      (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')) ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-24.04
+    # Least-privilege, job-level only (supply-chain hardening, #1):
+    # - contents: write     create/push the release tag, publish the GitHub Release
+    # - id-token: write     mint the OIDC token used for Sigstore-backed attestations
+    # - attestations: write publish build provenance / SBOM attestations to this repo
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     steps:
+      - name: Harden Runner
+        # macOS runners (the build job above) are not supported by harden-runner,
+        # so only this ubuntu-24.04 release job is egress-restricted.
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            uploads.github.com:443
+            objects.githubusercontent.com:443
+            *.actions.githubusercontent.com:443
+            fulcio.sigstore.dev:443
+            oauth2.sigstore.dev:443
+            rekor.sigstore.dev:443
+            tuf-repo-cdn.sigstore.dev:443
+            tuf-repo.github.com:443
+            *.blob.core.windows.net:443
+            raw.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -79,6 +111,7 @@ jobs:
           echo "Detected version: v$VERSION"
 
       - name: Create and push tag if not exists
+        if: github.event_name == 'push'
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
@@ -100,6 +133,54 @@ jobs:
           name: egovframe-launcher-binaries
           path: dist
 
+      - name: Generate SBOM for Go module
+        # anchore/sbom-action (Syft) instead of a `go install`-based generator
+        # (e.g. cyclonedx-gomod): it needs no proxy.golang.org egress on this
+        # hardened runner, and since launcher/go.mod has no third-party
+        # dependencies, the source-level SBOM below is equivalent to
+        # inspecting the compiled binaries' embedded module graph. The
+        # "Attest SBOM" step below binds this SBOM to the actual released
+        # binaries as its subject.
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          path: launcher
+          format: spdx-json
+          output-file: sbom.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Generate SHA256SUMS for packaged binaries
+        working-directory: dist
+        run: |
+          sha256sum -- * > SHA256SUMS
+          mv SHA256SUMS ../SHA256SUMS
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: "dist/*"
+
+      - name: Attest SBOM
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-path: "dist/*"
+          sbom-path: sbom.spdx.json
+
+      - name: Verify release integrity (gate)
+        # Fails the job before anything is published if checksums or
+        # attestations don't hold, so a tampered or unattested artifact never
+        # reaches the GitHub Release.
+        working-directory: dist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp ../SHA256SUMS .
+          sha256sum -c SHA256SUMS
+          for f in *; do
+            [[ "$f" == "SHA256SUMS" ]] && continue
+            gh attestation verify "$f" --repo "${{ github.repository }}"
+          done
+
       - name: Extract release notes for this version only
         run: |
           # Take only the latest "## [x.y.z]" section of CHANGELOG.md
@@ -107,13 +188,17 @@ jobs:
           cat RELEASE_NOTES.md
 
       - name: Publish GitHub Release
+        if: github.event_name == 'push'
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ env.VERSION }}
           name: Release ${{ env.VERSION }}
           draft: false
           prerelease: false
-          files: dist/*
+          files: |
+            dist/*
+            SHA256SUMS
+            sbom.spdx.json
           body_path: RELEASE_NOTES.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

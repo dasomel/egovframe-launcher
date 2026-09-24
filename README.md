@@ -128,6 +128,7 @@ make cross    # macOS(arm64/amd64) · Windows(arm64/amd64) 크로스 빌드 → 
 - [eGovFrame 공식 GitHub](https://github.com/eGovFramework)
 - [eGovFrame VSCode Initializr 확장](https://github.com/eGovFramework/egovframe-vscode-initializr)
 - [표준프레임워크 포털](https://www.egovframe.go.kr)
+- [Supply Chain (SBOM/attestation/release 검증)](docs/SUPPLY-CHAIN.md)
 
 ## 라이선스
 
