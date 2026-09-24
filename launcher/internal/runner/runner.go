@@ -2065,12 +2065,14 @@ func downloadAndVerifySHA512(url, expected string, logs *logbuf.Buf) (string, er
 	}
 	hasher := sha512.New()
 	if _, err := io.Copy(io.MultiWriter(tmpFile, hasher), resp.Body); err != nil {
+		_ = tmpFile.Close()
 		os.Remove(tmpPath)
 		return "", fmt.Errorf("failed to save downloaded file: %w", err)
 	}
 
 	actual := hex.EncodeToString(hasher.Sum(nil))
 	if actual != expected {
+		_ = tmpFile.Close()
 		os.Remove(tmpPath)
 		return "", sha512MismatchErr(url, expected, actual)
 	}
