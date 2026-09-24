@@ -46,7 +46,7 @@ cd ..
 scripts/verify-release.sh release-assets --online
 ```
 
-This checks `SHA256SUMS` and runs `gh attestation verify` on each binary against `dasomel/egovframe-launcher`, confirming both that the file wasn't tampered with and that it was actually built by this repository's release workflow.
+This checks `SHA256SUMS` and runs `gh attestation verify` on each binary against `dasomel/egovframe-launcher`, confirming both that the file wasn't tampered with and that it was actually built by this repository's release workflow. It passes `--source-ref refs/heads/main`, because same-repo PR dry runs also publish attestations for their (unreleased) builds; only artifacts built from `main` are accepted.
 
 ### Offline
 

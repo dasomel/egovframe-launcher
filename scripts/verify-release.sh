@@ -69,7 +69,7 @@ while IFS= read -r -d '' file; do
   [[ "$name" == "SHA256SUMS" ]] && continue
   [[ "$name" == *.spdx.json ]] && continue
   echo "--- $name ---"
-  if ! gh attestation verify "$file" --repo "$REPO"; then
+  if ! gh attestation verify "$file" --repo "$REPO" --source-ref refs/heads/main; then
     echo "error: attestation verification failed for $name" >&2
     FAILED=1
   fi

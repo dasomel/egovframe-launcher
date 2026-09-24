@@ -84,7 +84,7 @@ try {
         $_.Name -ne "SHA256SUMS" -and $_.Name -notlike "*.spdx.json"
     } | ForEach-Object {
         Write-Host "--- $($_.Name) ---"
-        & gh attestation verify $_.FullName --repo $Repo
+        & gh attestation verify $_.FullName --repo $Repo --source-ref refs/heads/main
         if ($LASTEXITCODE -ne 0) {
             Write-Warning "attestation verification failed for $($_.Name)"
             $attestFailed = $true
