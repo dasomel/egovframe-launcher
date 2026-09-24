@@ -6,7 +6,7 @@ compatibility: Requires the eGovFrame Launcher checkout, Go toolchain, and the t
 metadata:
   openforge-scope: project
   openforge-owner: dasomel/egovframe-launcher
-  openforge-maturity: draft
+  openforge-maturity: verified
   openforge-version: "1"
 ---
 
@@ -37,6 +37,7 @@ metadata:
 4. Make target setup idempotent where it provisions Docker services, schema/data, workspaces, or isolated Tomcat instances.
 5. Preserve target isolation: allocate/configure ports so one target does not silently collide with another; WAR targets use their own runtime instance unless the design explicitly says otherwise.
 6. Detect required JDK/tools through the existing launcher mechanism rather than hardcoding a local machine path.
+   When replaying or testing against a disposable workspace, note that a persisted `WorkspacePath` in `~/.egov-launcher.json` overrides the `-workspace` flag (#17); confirm the effective workspace before cloning.
 7. Keep long-running build/run/setup operations observable with logs/progress and actionable failure state; do not print success before readiness is measured.
 8. Add/update tests for pure Go/domain behavior and use a real toolchain/process path when the change depends on Maven, Java, Tomcat, Docker, npm, browser reachability, or external process lifecycle.
 9. Run `make verify` from the repository root. Run `make cross` when the change can affect platform-specific compilation or release binaries.
@@ -46,7 +47,7 @@ metadata:
 
 `make verify` is the canonical deterministic local baseline: gofumpt check against the explicit `.gofumpt-baseline`, `go vet`, short-mode Go tests, and current-platform build. The formatter baseline is limited to known pre-existing debt: any new drift fails, and a resolved baseline entry also fails until removed. `make test` intentionally excludes Docker-backed integration paths so the baseline remains reproducible; use the target-specific integration/runtime path when that behavior matters. Separate baseline evidence from target runtime/toolchain/browser evidence. A successful Go build does not prove Tomcat deployment, Docker infrastructure, JDK compatibility, or service readiness.
 
-This skill remains `draft`. Promote it only after a fresh-session replay records both a successful happy path and an edge/failure case under the OpenForge skill-verification evidence contract.
+Maturity `verified` (2026-09-24): a fresh-session replay recorded in dasomel/egovframe-launcher#9 exercised `make verify`, a real `boot-sample` clone/build/run/HTTP-readiness/stop lifecycle, and a Docker-down `simple-backend` failure that surfaced an actionable prerequisite error. Re-run a replay before relying on this after lifecycle, prerequisite, or port-allocation changes.
 
 ## Stop / Escalate When
 
