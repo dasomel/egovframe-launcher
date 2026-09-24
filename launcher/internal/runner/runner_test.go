@@ -1,8 +1,13 @@
 package runner
 
 import (
+	"bytes"
+	"crypto/sha512"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -815,5 +820,112 @@ func TestUseWorkspaceOverridesPersistedWithoutSaving(t *testing.T) {
 	}
 	if got := persist.Load().WorkspacePath; got != persisted {
 		t.Fatalf("UseWorkspace persisted %q; saved config must stay %q", got, persisted)
+	}
+}
+
+// Supply-chain hardening (#1): Tomcat downloads/offline artifacts are
+// refused unless their SHA-512 matches the pinned digest, and the pinned
+// Docker images are content-addressed.
+
+func TestSHA512Hex(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "content.bin")
+	content := []byte("hello tomcat")
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := sha512Hex(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := sha512.New()
+	h.Write(content)
+	want := hex.EncodeToString(h.Sum(nil))
+	if got != want {
+		t.Fatalf("sha512Hex(%q) = %q, want %q", path, got, want)
+	}
+}
+
+// verifyLocalSHA512 stands in for the "pre-placed offline artifact" check:
+// a local file (not downloaded) must pass on a matching digest and fail
+// (without falling back to the network) on a mismatch.
+func TestVerifyLocalSHA512_PrePlacedFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "apache-tomcat-10.1.25.zip")
+	content := []byte("pretend tomcat zip bytes")
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h := sha512.New()
+	h.Write(content)
+	expected := hex.EncodeToString(h.Sum(nil))
+
+	if err := verifyLocalSHA512(path, expected); err != nil {
+		t.Fatalf("expected matching digest to pass, got error: %v", err)
+	}
+
+	if err := verifyLocalSHA512(path, "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"); err == nil {
+		t.Fatal("expected mismatched digest to fail")
+	} else if !strings.Contains(err.Error(), "SHA-512") {
+		t.Fatalf("mismatch error should mention SHA-512, got: %v", err)
+	}
+}
+
+func TestDownloadAndVerifySHA512_Match(t *testing.T) {
+	body := []byte("fake tomcat zip payload for testing")
+	h := sha512.New()
+	h.Write(body)
+	expected := hex.EncodeToString(h.Sum(nil))
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(body)
+	}))
+	defer srv.Close()
+
+	logs := logbuf.New(100)
+	path, err := downloadAndVerifySHA512(srv.URL, expected, logs)
+	if err != nil {
+		t.Fatalf("expected download+verify to succeed, got: %v", err)
+	}
+	defer os.Remove(path)
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, body) {
+		t.Fatalf("downloaded file content mismatch: got %q want %q", got, body)
+	}
+}
+
+func TestDownloadAndVerifySHA512_Mismatch(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("tampered or corrupted payload"))
+	}))
+	defer srv.Close()
+
+	logs := logbuf.New(100)
+	wrongDigest := strings.Repeat("0", 128)
+	path, err := downloadAndVerifySHA512(srv.URL, wrongDigest, logs)
+	if err == nil {
+		os.Remove(path)
+		t.Fatal("expected digest mismatch to fail")
+	}
+	if !strings.Contains(err.Error(), "SHA-512") {
+		t.Fatalf("mismatch error should mention SHA-512, got: %v", err)
+	}
+	if path != "" {
+		t.Fatalf("expected no temp file path returned on mismatch, got %q", path)
+	}
+}
+
+// Pinned Docker images must be content-addressed (repo:tag@sha256:digest),
+// not floating tags, so a re-pushed tag can't silently swap the image.
+func TestPinnedDockerImagesUseDigests(t *testing.T) {
+	for _, img := range []string{mysqlImage, rabbitmqImage} {
+		if !strings.Contains(img, "@sha256:") {
+			t.Errorf("pinned image %q must be pinned by digest (@sha256:...)", img)
+		}
 	}
 }

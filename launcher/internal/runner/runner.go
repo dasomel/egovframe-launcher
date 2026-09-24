@@ -5,6 +5,8 @@ package runner
 import (
 	"archive/zip"
 	"bufio"
+	"crypto/sha512"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -1932,6 +1934,16 @@ func patchRSPDeployables(projectDir string) error {
 	return nil
 }
 
+const (
+	tomcatDirName = "apache-tomcat-10.1.25"
+	tomcatZipURL  = "https://archive.apache.org/dist/tomcat/tomcat-10/v10.1.25/bin/apache-tomcat-10.1.25.zip"
+	// tomcatZipSHA512 is Apache's official checksum, fetched from
+	// tomcatZipURL+".sha512" on 2026-09-24. Every zip — downloaded or a
+	// pre-placed offline artifact — is hashed against this before unzip, so
+	// a corrupted or tampered archive is never installed.
+	tomcatZipSHA512 = "506eb118382ddde0a909cdeaa8074e960fe27c7d8a38bfe27f7eff7230a0a1c3b7c533e9abb33343824eab9ecb751171b637991fb8111bd240f98bf7d7f1e8c1"
+)
+
 func autoInstallTomcat(logs *logbuf.Buf) (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -1941,7 +1953,6 @@ func autoInstallTomcat(logs *logbuf.Buf) (string, error) {
 	if err := os.MkdirAll(installDir, 0o755); err != nil {
 		return "", err
 	}
-	tomcatDirName := "apache-tomcat-10.1.25"
 	targetHome := filepath.Join(installDir, tomcatDirName)
 
 	// Check if catalina script already exists (meaning it's already installed)
@@ -1951,34 +1962,29 @@ func autoInstallTomcat(logs *logbuf.Buf) (string, error) {
 		return targetHome, nil
 	}
 
-	zipURL := "https://archive.apache.org/dist/tomcat/tomcat-10/v10.1.25/bin/apache-tomcat-10.1.25.zip"
-	logs.Append("[info] Tomcat 10.1.25 다운로드 시작: " + zipURL)
-
-	resp, err := http.Get(zipURL)
-	if err != nil {
-		return "", fmt.Errorf("download failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("download failed: HTTP status %d", resp.StatusCode)
-	}
-
-	// Save to temp file
-	tmpFile, err := os.CreateTemp("", "tomcat-*.zip")
-	if err != nil {
-		return "", err
-	}
-	defer os.Remove(tmpFile.Name())
-	defer tmpFile.Close()
-
-	logs.Append("[info] Tomcat zip 파일 서버에서 수신 중...")
-	if _, err := io.Copy(tmpFile, resp.Body); err != nil {
-		return "", fmt.Errorf("failed to save downloaded zip: %w", err)
+	// An approved offline artifact at ~/.egov-launcher/apache-tomcat-10.1.25.zip
+	// skips the network, but still goes through the same SHA-512 gate below —
+	// on mismatch we fail rather than silently falling back to downloading,
+	// since that would ignore a tampered/corrupted local file.
+	offlineZip := filepath.Join(installDir, tomcatDirName+".zip")
+	zipPath := offlineZip
+	if _, statErr := os.Stat(offlineZip); statErr == nil {
+		logs.Append("[info] 사전 배치된 Tomcat 아카이브 사용(오프라인 설치): " + offlineZip)
+		if err := verifyLocalSHA512(offlineZip, tomcatZipSHA512); err != nil {
+			return "", err
+		}
+	} else {
+		logs.Append("[info] Tomcat 10.1.25 다운로드 시작(네트워크): " + tomcatZipURL)
+		downloaded, err := downloadAndVerifySHA512(tomcatZipURL, tomcatZipSHA512, logs)
+		if err != nil {
+			return "", err
+		}
+		defer os.Remove(downloaded)
+		zipPath = downloaded
 	}
 
 	logs.Append("[info] Tomcat zip 압축 해제 중: " + targetHome)
-	if err := unzip(tmpFile.Name(), installDir); err != nil {
+	if err := unzip(zipPath, installDir); err != nil {
 		return "", fmt.Errorf("failed to unzip Tomcat: %w", err)
 	}
 
@@ -1993,6 +1999,87 @@ func autoInstallTomcat(logs *logbuf.Buf) (string, error) {
 
 	logs.Append("[info] Tomcat 10.1.25 설치 및 실행 준비 완료: " + targetHome)
 	return targetHome, nil
+}
+
+// sha512Hex returns the lowercase hex SHA-512 digest of the file at path.
+func sha512Hex(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	h := sha512.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// sha512MismatchErr formats an actionable digest-mismatch error naming the
+// source (URL or file path) plus the expected and actual digests.
+func sha512MismatchErr(source, expected, actual string) error {
+	return fmt.Errorf("%s SHA-512 불일치 — 손상되었거나 변조되었을 수 있습니다 (expected=%s actual=%s)", source, expected, actual)
+}
+
+// verifyLocalSHA512 hashes the file at path and compares it against
+// expected, used for a pre-placed/offline artifact.
+func verifyLocalSHA512(path, expected string) error {
+	actual, err := sha512Hex(path)
+	if err != nil {
+		return fmt.Errorf("failed to hash %s: %w", path, err)
+	}
+	if actual != expected {
+		return sha512MismatchErr(path, expected, actual)
+	}
+	return nil
+}
+
+// downloadAndVerifySHA512 streams url into a temp file while hashing it with
+// SHA-512, so the whole response is never trusted before its digest is
+// checked against expected. On any failure — network error, non-200 status,
+// or a digest mismatch — the temp file is removed and the caller's install
+// dir is left untouched (nothing has been unzipped yet). Kept generic
+// (not Tomcat-specific) so callers can point url at any source, including a
+// test httptest server.
+func downloadAndVerifySHA512(url, expected string, logs *logbuf.Buf) (string, error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		return "", fmt.Errorf("download failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("download failed: HTTP status %d", resp.StatusCode)
+	}
+
+	tmpFile, err := os.CreateTemp("", "tomcat-*.zip")
+	if err != nil {
+		return "", err
+	}
+	tmpPath := tmpFile.Name()
+	defer tmpFile.Close()
+
+	if logs != nil {
+		logs.Append("[info] 파일 서버에서 수신 중: " + url)
+	}
+	hasher := sha512.New()
+	if _, err := io.Copy(io.MultiWriter(tmpFile, hasher), resp.Body); err != nil {
+		_ = tmpFile.Close()
+		os.Remove(tmpPath)
+		return "", fmt.Errorf("failed to save downloaded file: %w", err)
+	}
+
+	actual := hex.EncodeToString(hasher.Sum(nil))
+	if actual != expected {
+		_ = tmpFile.Close()
+		os.Remove(tmpPath)
+		return "", sha512MismatchErr(url, expected, actual)
+	}
+	if logs != nil {
+		logs.Append("[info] SHA-512 검증 완료: " + url)
+	}
+	return tmpPath, nil
 }
 
 func unzip(src, dest string) error {
@@ -2597,6 +2684,20 @@ const (
 
 const launcherRabbitContainer = "egov-launcher-rabbitmq"
 
+const (
+	// mysqlImage pins the floating mysql:8.0 tag to its resolved patch
+	// (8.0.46) plus the multi-arch index digest, so amd64/arm64 hosts both
+	// resolve and a re-pushed/compromised "8.0" tag can't silently swap the
+	// image. Verified via `docker buildx imagetools inspect mysql:8.0.46` on
+	// 2026-09-24; the tag was pushed 2026-05-05 (past the 14-day cooling
+	// window).
+	mysqlImage = "mysql:8.0.46@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b"
+	// rabbitmqImage pins the floating rabbitmq:3 tag the same way, to its
+	// resolved patch (3.13.7). Verified 2026-09-24; the tag was pushed
+	// 2025-12-02.
+	rabbitmqImage = "rabbitmq:3.13.7@sha256:87178a0ee3e2f52980ba356d38646ed1056705ff2d5ff281f8965456eaa0c1e3"
+)
+
 // containerSpec describes a single named Docker container for
 // ensureDockerContainer: how to create it, how to tell it's ready, and how
 // to recover it from a crashed state.
@@ -2728,7 +2829,7 @@ func ensureMySQLContainer(logs *logbuf.Buf) error {
 		// lower_case_table_names=1)과 달리 Linux 컨테이너 기본값(0)은
 		// 대소문자를 구분해 "Table doesn't exist"가 나므로 1로 맞춘다.
 		// (MySQL 8은 데이터 초기화 시에만 설정 가능 — 컨테이너 생성 시 지정)
-		"mysql:8.0",
+		mysqlImage,
 		"--lower-case-table-names=1",
 	}
 	// Wait for MySQL to accept AUTHENTICATED connections. mysqladmin ping
@@ -2742,7 +2843,7 @@ func ensureMySQLContainer(logs *logbuf.Buf) error {
 	if err := ensureDockerContainer(containerSpec{
 		name:         launcherMySQLContainer,
 		displayName:  "MySQL",
-		image:        "mysql:8.0",
+		image:        mysqlImage,
 		runArgs:      runArgs,
 		ready:        ready,
 		timeout:      120 * time.Second,
@@ -2817,7 +2918,7 @@ func ensureRabbitMQContainer(logs *logbuf.Buf) error {
 		"run", "-d", "--name", launcherRabbitContainer,
 		"-p", "5672:5672",
 		"--entrypoint", "sh",
-		"rabbitmq:3",
+		rabbitmqImage,
 		"-c", "echo \"egovframe_secret_rabbitmq_cookie_12345\" > /var/lib/rabbitmq/.erlang.cookie && chown rabbitmq:rabbitmq /var/lib/rabbitmq/.erlang.cookie && chmod 600 /var/lib/rabbitmq/.erlang.cookie && exec docker-entrypoint.sh rabbitmq-server",
 	}
 	ready := func() bool {
@@ -2826,7 +2927,7 @@ func ensureRabbitMQContainer(logs *logbuf.Buf) error {
 	return ensureDockerContainer(containerSpec{
 		name:            launcherRabbitContainer,
 		displayName:     "RabbitMQ",
-		image:           "rabbitmq:3",
+		image:           rabbitmqImage,
 		runArgs:         runArgs,
 		ready:           ready,
 		timeout:         120 * time.Second,
