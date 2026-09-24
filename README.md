@@ -51,7 +51,7 @@ go run .          # 127.0.0.1:7070
 
 ```
 -addr string        수신 주소 (기본 "127.0.0.1:7070")
--workspace string   clone 작업 디렉터리 (기본 ".work")
+-workspace string   clone 작업 디렉터리 (기본 ".work"; 생략 시 대시보드에서 저장한 경로가 우선, 명시하면 이번 실행에만 적용)
 -no-open            브라우저 자동 오픈 안 함
 ```
 

@@ -38,6 +38,13 @@ func main() {
 	}
 
 	r := runner.New(ws)
+	// The persisted workspace only replaces the flag's default, never a value
+	// the user passed explicitly (#17).
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "workspace" {
+			r.UseWorkspace(ws)
+		}
+	})
 	handler := server.New(r, assets, version)
 
 	ln, err := net.Listen("tcp", *addr)
@@ -45,7 +52,7 @@ func main() {
 		log.Fatalf("listen %s: %v", *addr, err)
 	}
 	url := fmt.Sprintf("http://%s/", ln.Addr().String())
-	log.Printf("eGovFrame Launcher → %s (workspace: %s)", url, ws)
+	log.Printf("eGovFrame Launcher → %s (workspace: %s)", url, r.Workspace())
 
 	if !*noOpen {
 		go func() {

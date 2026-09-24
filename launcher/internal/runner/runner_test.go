@@ -791,3 +791,29 @@ func TestWinShellCommandGradlew(t *testing.T) {
 		t.Errorf("non-gradlew sh must be unchanged, got %q", got.Name)
 	}
 }
+
+// An explicit -workspace flag must win over the persisted path for the
+// session without rewriting the user's saved config (#17).
+func TestUseWorkspaceOverridesPersistedWithoutSaving(t *testing.T) {
+	saved := persist.Load()
+	t.Cleanup(func() { _ = persist.Save(saved) })
+
+	persisted := t.TempDir()
+	if err := persist.Update(func(c *persist.Config) { c.WorkspacePath = persisted }); err != nil {
+		t.Fatal(err)
+	}
+
+	r := New(t.TempDir())
+	if got := r.Workspace(); got != persisted {
+		t.Fatalf("without explicit flag, Workspace() = %q, want persisted %q", got, persisted)
+	}
+
+	explicit := t.TempDir()
+	r.UseWorkspace(explicit)
+	if got := r.Workspace(); got != explicit {
+		t.Fatalf("after UseWorkspace, Workspace() = %q, want %q", got, explicit)
+	}
+	if got := persist.Load().WorkspacePath; got != persisted {
+		t.Fatalf("UseWorkspace persisted %q; saved config must stay %q", got, persisted)
+	}
+}
