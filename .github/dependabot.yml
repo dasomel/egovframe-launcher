@@ -1,13 +1,19 @@
 version: 2
 updates:
+  # 14-day cooldown: routine updates wait out the window in which compromised
+  # releases are typically detected and yanked (supply-chain policy, #1).
   - package-ecosystem: "gomod"
     directory: "/launcher"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 14
     open-pull-requests-limit: 5
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 14
     open-pull-requests-limit: 5
