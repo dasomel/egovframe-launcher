@@ -2826,8 +2826,6 @@ func ensureRabbitMQContainer(logs *logbuf.Buf) error {
 	}, logs)
 }
 
-
-
 // ensureMySQLAppUser (re)creates the app-facing MySQL user reachable from
 // the host, container bridge, and Docker Desktop's host gateway, then
 // grants it full privileges. Idempotent: safe to call repeatedly.
