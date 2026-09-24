@@ -88,7 +88,9 @@ type Runner struct {
 func New(workspace string) *Runner {
 	cfg := persist.Load()
 
-	// Workspace: persisted value overrides the argument (CLI flag is only the bootstrap default).
+	// Workspace: persisted value overrides the argument, which is only the
+	// bootstrap default. An explicit -workspace flag is applied afterwards via
+	// UseWorkspace.
 	if cfg.WorkspacePath != "" {
 		workspace = cfg.WorkspacePath
 	}
@@ -184,6 +186,15 @@ func (r *Runner) Workspace() string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.workspace
+}
+
+// UseWorkspace switches the workspace for this session only. It deliberately
+// does not persist, so a one-off -workspace run cannot rewrite the saved
+// config the dashboard uses on later launches.
+func (r *Runner) UseWorkspace(path string) {
+	r.mu.Lock()
+	r.workspace = path
+	r.mu.Unlock()
 }
 
 func (r *Runner) SetWorkspace(path string) {
