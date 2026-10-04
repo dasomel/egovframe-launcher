@@ -1,0 +1,31 @@
+{
+  "schemaVersion": "openforge-agent-skill-verification/v1",
+  "skill": "egovframe-launcher-target-workflow",
+  "skillVersion": "1",
+  "freshSession": true,
+  "agentRuntime": "claude-sonnet-5-5 (Claude Code subagent)",
+  "happyPath": {
+    "status": "pass",
+    "summary": "Fresh-session replay (dasomel/openforge#54, 2026-10-04) activated the skill from its description for 'add a new Spring Boot target with its own port', followed its pointer to catalog.go Targets(), added a scratch boot target on unused port 8097, and catalog/runner/server tests passed (exit 0). Reverted afterwards. Static catalog/test evidence only; no real clone/build/run lifecycle was exercised.",
+    "evidence": [
+      "research/issue-54-egovframe-launcher-target-workflow-replay-2026-10-04.md#step-2-happy-path"
+    ]
+  },
+  "edgeCase": {
+    "status": "pass",
+    "summary": "Introduced two port-isolation violations (a duplicate target port and a Run-step dependency port colliding with another target); the repository's TestPortsUniqueAcrossCatalog failed with exit 1 naming both colliding owners each time, then passed (exit 0) after revert. Covers duplicate ports declared in the catalog only, not host port-in-use or shared Tomcat instances.",
+    "evidence": [
+      "research/issue-54-egovframe-launcher-target-workflow-replay-2026-10-04.md#step-3-edge-case-port-isolation"
+    ]
+  },
+  "deterministicChecks": [
+    { "command": "make verify", "status": "pass" },
+    { "command": "cd launcher && go test ./internal/catalog/", "status": "pass" }
+  ],
+  "unverified": [
+    "No real target lifecycle (git clone, Maven/JDK build, run, HTTP readiness, open, stop) was exercised in this replay; the earlier replay cited in SKILL.md (egovframe-launcher#9) was not re-verified.",
+    "No Docker-backed infrastructure target, Tomcat/WAR runtime-instance isolation, or live host port-in-use behavior was tested; the port guard is a static catalog uniqueness test.",
+    "make cross was not run."
+  ],
+  "verifiedAt": "2026-10-04"
+}
