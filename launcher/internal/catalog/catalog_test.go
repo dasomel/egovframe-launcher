@@ -1,6 +1,9 @@
 package catalog
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func TestTargetsHaveUniqueNonEmptyIDs(t *testing.T) {
 	seen := map[string]bool{}
@@ -38,6 +41,33 @@ func TestRunnableHavePort(t *testing.T) {
 	for _, tg := range Targets() {
 		if len(tg.Run) > 0 && tg.Port == 0 {
 			t.Errorf("%s runnable but Port==0", tg.ID)
+		}
+	}
+}
+
+// Port 0 means "no served port" / "no port wait" and is exempt; every real
+// port (target or Run-step dependency) must be unique across the catalog so
+// targets can run concurrently.
+func TestPortsUniqueAcrossCatalog(t *testing.T) {
+	owner := map[int]string{}
+	claim := func(port int, who string) {
+		if port == 0 {
+			return
+		}
+		if port < 0 || port > 65535 {
+			t.Errorf("%s: invalid port %d", who, port)
+			return
+		}
+		if prev, dup := owner[port]; dup {
+			t.Errorf("port %d collides: %s and %s", port, prev, who)
+			return
+		}
+		owner[port] = who
+	}
+	for _, tg := range Targets() {
+		claim(tg.Port, tg.ID+" (target port)")
+		for i, c := range tg.Run {
+			claim(c.Port, fmt.Sprintf("%s (run[%d] %s)", tg.ID, i, c.Name))
 		}
 	}
 }
