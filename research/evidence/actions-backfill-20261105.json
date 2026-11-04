@@ -1,0 +1,29 @@
+{
+  "schema_version": "openforge-actions-backfill/v1",
+  "repository": "dasomel/egovframe-launcher",
+  "collection_date": "2026-11-05",
+  "records_in_export": 52,
+  "appended_records": 52,
+  "original_stats": {
+    "excluded_not_on_main": 60,
+    "fetched": 112,
+    "included": 52,
+    "not_on_main_other_event": 1,
+    "not_on_main_pull_request": 59,
+    "per_month": {
+      "2026-07": 12,
+      "2026-08": 7,
+      "2026-09": 20,
+      "2026-10": 13
+    },
+    "repository": "dasomel/egovframe-launcher"
+  },
+  "removed_exact_duplicates": 0,
+  "methodology_url": "https://github.com/dasomel/openforge/blob/main/docs/research-evidence.md#github-actions-historical-backfill",
+  "limitations": [
+    "Main-reachable history only; not representative of all PR failures.",
+    "Latest available workflow attempt only; expired or deleted runs unavailable.",
+    "duration_ms measures run_started_at to updated_at, not job execution time.",
+    "Human intervention and review correction counters are unobserved schema placeholders; metadata flags are false."
+  ]
+}
